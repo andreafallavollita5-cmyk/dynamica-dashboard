@@ -1,18 +1,40 @@
-"""Minimal Streamlit entry point for the Dynamica Retail dashboard.
-
-This file intentionally avoids a full dashboard implementation for now.
-It only proves that the app can load the latest CSV/JSON files that will
-later be produced by the daily update flow.
-"""
+"""Streamlit dashboard for Dynamica Retail using local latest mock data."""
 
 from __future__ import annotations
 
 import json
+import math
 from pathlib import Path
+from typing import Iterable
 
 
 DATA_PATH = Path("data/report_data.csv")
 LAST_UPDATE_PATH = Path("data/last_update.json")
+
+SVG_ICONS = {
+    "logo": '<svg viewBox="0 0 48 48" aria-hidden="true"><path fill="#16d8ee" d="M24 2 45 13 24 25 3 13Z"/><path fill="#0ca9ef" d="M3 13 24 25v21L3 35Z"/><path fill="#22cf71" d="M45 13 24 25v21l21-11Z"/><path fill="none" stroke="#fff" stroke-width="3" stroke-linejoin="round" d="M24 2 45 13v22L24 46 3 35V13Zm0 23v21m0-21L3 13m21 12 21-12"/></svg>',
+    "dashboard": '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 8 4.5v9L12 21l-8-4.5v-9Z"/><path d="m4 7.5 8 4.5 8-4.5M12 12v9"/></svg>',
+    "chart": '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20V10m6 10V4m6 16v-7m4 7H2"/></svg>',
+    "channels": '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19V9m8 10V5m8 14v-7"/><circle cx="4" cy="7" r="2"/><circle cx="12" cy="3" r="2"/><circle cx="20" cy="10" r="2"/></svg>',
+    "sun": '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M4.9 4.9l1.4 1.4m11.4 11.4 1.4 1.4M2 12h2m16 0h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>',
+    "moon": '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 15.5A8 8 0 0 1 8.5 4 8 8 0 1 0 20 15.5Z"/></svg>',
+    "bell": '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4"/></svg>',
+    "power": '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2v10m5.7-6.7a9 9 0 1 1-11.4 0"/></svg>',
+    "chevron-down": '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>',
+    "calendar": '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M16 3v4M8 3v4M3 10h18"/></svg>',
+    "wallet": '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7h16a2 2 0 0 1 2 2v10H5a2 2 0 0 1-2-2Zm0 0 13-4v4m1 5h4"/></svg>',
+    "euro": '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M16 7.5a5 5 0 1 0 0 9M6.5 10h8m-8 4h7"/></svg>',
+    "users": '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="8" cy="8" r="3"/><circle cx="17" cy="8" r="3"/><path d="M2 20v-2a5 5 0 0 1 10 0v2m1-7a5 5 0 0 1 9 3v4"/></svg>',
+    "target": '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="13" r="8"/><circle cx="11" cy="13" r="3"/><path d="m13 11 7-7m-4 0h4v4"/></svg>',
+    "check": '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12 4 4L19 6"/></svg>',
+    "check-circle": '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="m8 12 3 3 5-6"/></svg>',
+    "trend-up": '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V5m-6 6 6-6 6 6"/></svg>',
+    "trend-down": '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14m-6-6 6 6 6-6"/></svg>',
+}
+
+
+def svg_icon(name: str, class_name: str = "") -> str:
+    return SVG_ICONS[name].replace("<svg ", f'<svg class="svg-icon {class_name}" ')
 
 
 def load_last_update() -> dict:
@@ -24,28 +46,1056 @@ def load_last_update() -> dict:
         return json.load(f)
 
 
+def as_number(series):
+    import pandas as pd
+
+    return pd.to_numeric(series.replace({"-": None, "": None}), errors="coerce")
+
+
+def money(value: float | int | None) -> str:
+    if value is None or (isinstance(value, float) and math.isnan(value)):
+        return "-"
+    return f"{value:,.2f} EUR".replace(",", "X").replace(".", ",").replace("X", ".")
+
+
+def integer(value: float | int | None) -> str:
+    if value is None or (isinstance(value, float) and math.isnan(value)):
+        return "-"
+    return f"{value:,.0f}".replace(",", ".")
+
+
+def percent(value: float | int | None) -> str:
+    if value is None or (isinstance(value, float) and math.isnan(value)):
+        return "-"
+    return f"{value * 100:.1f}%".replace(".", ",")
+
+
+def ratio(numerator: float, denominator: float) -> float | None:
+    if not denominator or math.isnan(denominator):
+        return None
+    return numerator / denominator
+
+
+def first_value(metadata: dict, keys: Iterable[str]) -> str:
+    for key in keys:
+        value = metadata.get(key)
+        if value:
+            return str(value)
+    return "-"
+
+
+def apply_style(st) -> None:
+    st.markdown(
+        """
+        <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+        :root {
+          --blue: #0828f7;
+          --blue-strong: #001fd7;
+          --cyan: #0cb6f4;
+          --orange: #ff7800;
+          --green: #08a642;
+          --navy: #031638;
+          --line: #dbe3ef;
+          --muted: #72809a;
+          --page-bg: #fbfcfe;
+          --sidebar-bg: linear-gradient(155deg, #041936 0%, #001633 54%, #061e43 100%);
+          --card-bg: #ffffff;
+          --text-main: #00145a;
+          --text-secondary: #50627f;
+          --border: #dbe3ef;
+          --surface-muted: #e6edf7;
+          --table-header: #ffffff;
+          --table-row: #ffffff;
+          --field-bg: #ffffff;
+          --button-bg: #ffffff;
+          --card-shadow: 0 5px 18px rgba(0,20,90,.035);
+        }
+        body:has(#dashboard-theme[data-theme="dark"]) {
+          --blue: #7894ff;
+          --blue-strong: #9db0ff;
+          --page-bg: #07111f;
+          --sidebar-bg: linear-gradient(155deg, #020916 0%, #061328 55%, #0a1c35 100%);
+          --card-bg: #111d2e;
+          --text-main: #eef4ff;
+          --text-secondary: #a9b8cf;
+          --border: #2a3b52;
+          --line: #2a3b52;
+          --surface-muted: #26354a;
+          --table-header: #17263c;
+          --table-row: #111d2e;
+          --field-bg: #142238;
+          --button-bg: #142238;
+          --card-shadow: 0 7px 22px rgba(0,0,0,.24);
+        }
+        html, body, [class*="css"], .stApp, .stApp * {
+          font-family: "Inter", Arial, sans-serif !important;
+          font-synthesis: none;
+          letter-spacing: 0px !important;
+          text-rendering: geometricPrecision;
+          -webkit-font-smoothing: antialiased;
+        }
+        .font-preload { position:absolute; width:0; height:0; overflow:hidden; opacity:0; pointer-events:none; }
+        .font-preload span:nth-child(1) { font-weight:400; }
+        .font-preload span:nth-child(2) { font-weight:500; }
+        .font-preload span:nth-child(3) { font-weight:600; }
+        .font-preload span:nth-child(4) { font-weight:700; }
+        .svg-icon { display:block; fill:none; stroke:currentColor; stroke-width:1.8; stroke-linecap:round; stroke-linejoin:round; shape-rendering:geometricPrecision; }
+        .stApp {
+          background: var(--page-bg);
+          color: var(--text-main);
+        }
+        [data-testid="stDecoration"],
+        [data-testid="stStatusWidget"],
+        #MainMenu { display: none !important; }
+        header[data-testid="stHeader"] {
+          height: 0;
+          min-height: 0;
+          background: transparent !important;
+        }
+        [data-testid="stToolbar"] { display: none !important; }
+        [data-testid="stToolbar"]:has([data-testid="stExpandSidebarButton"]) {
+          display: flex !important;
+          position: fixed;
+          inset: 0 auto auto 0;
+          width: 62px;
+          height: 62px;
+          padding: 10px;
+          background: transparent !important;
+          z-index: 1000;
+          pointer-events: none;
+        }
+        [data-testid="stExpandSidebarButton"],
+        [data-testid="stSidebarCollapseButton"] {
+          display: flex !important;
+          visibility: visible !important;
+          color: var(--blue) !important;
+        }
+        [data-testid="stExpandSidebarButton"] {
+          width: 42px;
+          height: 42px;
+          border: 1px solid var(--line);
+          border-radius: 8px;
+          background: #ffffff;
+          box-shadow: 0 3px 14px rgba(0,20,90,.08);
+          cursor: pointer;
+          pointer-events: auto;
+          position: relative;
+          z-index: 1001;
+        }
+        [data-testid="stIconMaterial"] {
+          font-family: "Material Symbols Rounded" !important;
+          font-weight: 400 !important;
+          letter-spacing: normal !important;
+        }
+        [data-testid="stSidebarCollapseButton"] {
+          position: absolute;
+          top: 12px;
+          right: 10px;
+          z-index: 1000;
+          cursor: pointer;
+          pointer-events: auto;
+        }
+        [data-testid="stSidebarCollapseButton"] {
+          color: #ffffff !important;
+        }
+        [data-testid="stSidebar"] {
+          width: 16.1vw !important;
+          min-width: 258px !important;
+          max-width: 310px !important;
+          background: var(--sidebar-bg);
+          border-right: 1px solid rgba(255,255,255,.08);
+          overflow-x: hidden !important;
+        }
+        [data-testid="stSidebar"] > div:first-child { width: 16.1vw !important; min-width:258px !important; max-width:310px !important; }
+        [data-testid="stSidebar"] * {
+          color: #f7fbff;
+        }
+        [data-testid="stSidebar"] [data-testid="stSidebarContent"] { padding: 0 12px !important; }
+        [data-testid="stSidebar"] [data-testid="stSidebarContent"] > div { padding-top: 0 !important; }
+        [data-testid="stSidebarUserContent"] { margin-top: -76px; }
+        [data-testid="stSidebar"] .stSelectbox { display: none; }
+        .block-container {
+          max-width: none;
+          padding: clamp(1px, .3vh, 3px) 1.1vw 24px 2vw;
+        }
+        h1, h2, h3, p {
+          letter-spacing: 0px;
+        }
+        .brand {
+          display: flex;
+          align-items: center;
+          gap: 19px;
+          margin: 22px 0 calc(13.45vh - 79px);
+          margin-left: -10px;
+          margin-right: -5px;
+        }
+        .brand-mark {
+          width: 50px;
+          height: 52px;
+          border-radius: 0;
+          display: grid;
+          place-items: center;
+          background: transparent;
+          color: transparent;
+          box-shadow: none;
+          position: relative;
+          filter: drop-shadow(0 3px 8px rgba(0,210,255,.2));
+        }
+        .brand-mark .svg-icon { width:50px; height:50px; }
+        .brand-title {
+          font-size: 27px;
+          font-weight: 700;
+          line-height: 28px;
+        }
+        .brand-title span {
+          color: #19d5ff;
+        }
+        .side-card {
+          background: rgba(255,255,255,.08);
+          border: 0;
+          border-radius: 0;
+          padding: 22px 0 2px;
+          margin: 0;
+          background: transparent;
+          margin-left: -10px;
+          margin-right: -5px;
+          position: fixed;
+          left: 16px;
+          bottom: 4.6vh;
+          width: calc(min(16.1vw, 310px) - 32px);
+        }
+        .account-row { display:grid; grid-template-columns:46px 1fr 18px; align-items:center; gap:10px; }
+        .avatar { width:43px; height:43px; display:grid; place-items:center; border-radius:50%; background:#fff; color:#1236cf !important; font-size:17px; font-weight:700; line-height:20px; }
+        .account-name { font-size:14px; font-weight:700; line-height:18px; }
+        .account-sub { color:#9fb1d3 !important; font-size:12px; font-weight:400; line-height:15px; margin-top:5px; }
+        .side-nav {
+          background: linear-gradient(90deg, #0799f5, #0cb4f7);
+          border-radius: 7px;
+          padding: clamp(8px, 1vh, 10px) 18px;
+          font-weight: 700;
+          margin: 0 0 12px;
+          box-shadow: 0 10px 25px rgba(0,166,255,.2);
+          margin-left: -10px;
+          margin-right: -5px;
+        }
+        .side-nav-row {
+          padding: 15px 12px;
+          font-size: 16px;
+          font-weight: 700;
+          color: #fff;
+          margin-left: -10px;
+          margin-right: -5px;
+        }
+        .side-nav,.side-nav-row { display:flex; align-items:center; line-height:20px; }
+        .nav-icon { display:inline-flex; width:30px; }
+        .nav-icon .svg-icon { width:21px; height:21px; }
+        .theme-toggle { position:fixed; left:20px; bottom:12.6vh; display:flex; align-items:center; gap:50px; pointer-events:none; }
+        .theme-toggle .svg-icon { width:23px; height:23px; }
+        [data-testid="stSidebar"] .st-key-dark_mode { position:fixed; left:47px; bottom:calc(12.6vh - 6px); width:44px; z-index:20; }
+        [data-testid="stSidebar"] .st-key-dark_mode [data-testid="stWidgetLabel"] { display:none; }
+        .header-actions { position:fixed; top:10px; right:34px; display:flex; gap:12px; z-index:20; }
+        .header-action { position:relative; width:46px; height:46px; display:grid; place-items:center; border:1px solid var(--line); border-radius:8px; color:var(--blue); background:#fff; box-shadow:0 3px 14px rgba(0,20,90,.04); }
+        .header-action .svg-icon { width:22px; height:22px; stroke-width:2; }
+        .page-title {
+          color: var(--blue);
+          font-size: 32px;
+          font-weight: 700;
+          line-height: 35px;
+          margin: 0 0 clamp(17px, 2.14vh, 24px);
+          position: relative;
+          top: 6px;
+        }
+        .top-filter {
+          background: var(--card-bg);
+          border: 1px solid var(--border);
+          border-radius: 8px;
+          box-shadow: 0 4px 16px rgba(0,20,90,.025);
+          padding: 12px 18px;
+          height: clamp(82px, 9.16vh, 99px);
+          margin-bottom: clamp(12px, 1.53vh, 15px);
+        }
+        .label {
+          color: var(--blue);
+          font-size: 12px;
+          font-weight: 700;
+          line-height: 16px;
+          margin-bottom: .35rem;
+        }
+        .filter-value {
+          color: var(--blue-strong);
+          font-size: 14px;
+          font-weight: 700;
+          line-height: 18px;
+          height: 40px;
+          display: flex;
+          align-items: center;
+          padding: 0 12px;
+          border: 1px solid var(--line);
+          border-radius: 5px;
+          background: var(--field-bg);
+        }
+        .project-filter .filter-value { width:54%; }
+        .period-filter .filter-value { width:46%; }
+        .filter-value { gap:10px; }
+        .filter-value .svg-icon { width:17px; height:17px; flex:0 0 auto; }
+        .filter-value .chevron { margin-left:auto; }
+        [data-testid="stHorizontalBlock"]:has(.filter-card-label) {
+          gap: 32px;
+          margin-bottom: clamp(12px, 1.53vh, 15px);
+        }
+        [data-testid="stHorizontalBlock"]:has(.filter-card-label) > [data-testid="stColumn"] {
+          min-height: clamp(82px, 9.16vh, 99px);
+          padding: 12px 18px;
+          background: var(--card-bg);
+          border: 1px solid var(--border);
+          border-radius: 8px;
+          box-shadow: 0 4px 16px rgba(0,20,90,.025);
+        }
+        .filter-card-label { color:var(--blue); font-size:12px; line-height:16px; font-weight:700; margin-bottom:6px; }
+        [data-testid="stColumn"]:has(.project-filter-label) .stSelectbox { width:64%; }
+        [data-testid="stColumn"]:has(.period-filter-label) .stDateInput { width:68%; }
+        [data-testid="stColumn"]:has(.filter-card-label) [data-baseweb="select"] > div,
+        [data-testid="stColumn"]:has(.filter-card-label) [data-baseweb="input"] > div,
+        [data-testid="stColumn"]:has(.filter-card-label) input {
+          background: var(--field-bg) !important;
+          color: var(--blue-strong) !important;
+          border-color: var(--border) !important;
+          font-weight:700;
+        }
+        .kpi-card {
+          position: relative;
+          height: clamp(140px, 15.48vh, 168px);
+          margin-bottom: clamp(14px, 1.53vh, 16px);
+          background: var(--card-bg);
+          border: 1px solid var(--border);
+          border-radius: 8px;
+          box-shadow: var(--card-shadow);
+          overflow: hidden;
+          padding: 14px 16px 12px 99px;
+        }
+        .kpi-card:before {
+          content: "";
+          position: absolute;
+          inset: 0 auto 0 0;
+          width: 10px;
+          background: var(--accent);
+        }
+        .kpi-label {
+          color: var(--blue);
+          font-size: 13px;
+          font-weight: 700;
+          line-height: 16px;
+          text-transform: uppercase;
+        }
+        .kpi-value {
+          color: var(--accent);
+          font-size: 27px;
+          font-weight: 700;
+          margin: 12px 0 14px;
+          line-height: 27px;
+        }
+        .kpi-note {
+          color: #02236c;
+          font-size: 12px;
+          font-weight: 500;
+          line-height: 16px;
+        }
+        .kpi-icon { position:absolute; left:27px; top:48px; width:43px; height:43px; display:grid; place-items:center; color:var(--accent); }
+        .kpi-icon .svg-icon { width:42px; height:42px; stroke-width:1.7; }
+        .panel {
+          height: clamp(211px, 23.43vh, 254px);
+          background: var(--card-bg);
+          border: 1px solid var(--border);
+          border-radius: 8px;
+          box-shadow: var(--card-shadow);
+          padding: 14px 31px;
+        }
+        .panel-title {
+          color: var(--blue);
+          font-size: 15px;
+          font-weight: 700;
+          line-height: 18px;
+          text-align: center;
+          text-transform: uppercase;
+          margin-bottom: 8px;
+        }
+        .gauge {
+          width: clamp(215px, 23.1vh, 250px);
+          height: clamp(109px, 11.75vh, 127px);
+          margin: .1rem auto .2rem;
+          border-radius: 215px 215px 0 0;
+          background: conic-gradient(from 270deg at 50% 100%, #1ab7f0 0deg, #1ab7f0 var(--angle), #e6edf7 var(--angle), #e6edf7 180deg, transparent 180deg);
+          position: relative;
+        }
+        .gauge:after {
+          content: "";
+          position: absolute;
+          left: 15px;
+          right: 15px;
+          bottom: 0;
+          height: 94px;
+          border-radius: 160px 160px 0 0;
+          background: #ffffff;
+        }
+        .gauge-value {
+          color: var(--blue);
+          font-size: 31px;
+          font-weight: 700;
+          line-height: 31px;
+          text-align: center;
+          margin-top: -38px;
+          position: relative;
+          z-index: 1;
+          top: -15px;
+        }
+        .gauge-caption {
+          color: var(--blue);
+          font-size: 12px;
+          font-weight: 700;
+          line-height: 16px;
+          text-align: center;
+          position: relative;
+          z-index: 1;
+          top: -5px;
+        }
+        .gauge-target { color:var(--blue); font-size:11px; font-weight:700; line-height:14px; text-align:center; margin-top:20px; }
+        .progress-row {
+          margin: 25px 0 23px;
+        }
+        .progress-panel { position:relative; }
+        .target-marker { position:absolute; left:83.3%; top:25px; height:160px; z-index:3; color:#08a642; font-size:11px; font-weight:700; line-height:14px; text-align:center; }
+        .target-marker:before { content:""; position:absolute; top:23px; left:50%; width:0; height:0; transform:translateX(-50%); border-left:12px solid transparent; border-right:12px solid transparent; border-top:20px solid #08a642; }
+        .target-marker:after { content:""; position:absolute; top:43px; bottom:0; left:50%; border-left:2px dashed #08a642; transform:translateX(-50%); }
+        .progress-label {
+          display: flex;
+          justify-content: space-between;
+          color: #062b75;
+          font-size: 12px;
+          font-weight: 700;
+          line-height: 16px;
+          margin-bottom: .35rem;
+        }
+        .bar {
+          height: 31px;
+          background: #dde3ed;
+          border: 1px solid #c8d1df;
+          border-radius: 5px;
+          overflow: hidden;
+        }
+        .bar-fill {
+          height: 100%;
+          width: var(--width);
+          min-width: 34px;
+          max-width: 100%;
+          display: flex;
+          align-items: center;
+          justify-content: flex-end;
+          padding-right: .75rem;
+          color: #ffffff;
+          background: linear-gradient(90deg, #0527ff, #001bd1);
+          font-weight: 700;
+          font-size: 14px;
+          line-height: 18px;
+        }
+        .efficiency {
+          display: grid;
+          place-items: center;
+          min-height: 180px;
+          position: relative;
+          align-content: end;
+          padding-bottom: 26px;
+        }
+        .efficiency:before {
+          content: "";
+          position: absolute;
+          top: 0;
+          width: clamp(238px, 25.76vh, 280px);
+          height: clamp(88px, 9.6vh, 104px);
+          border-radius: 50% 50% 0 0 / 100% 100% 0 0;
+          background: conic-gradient(from 270deg at 50% 100%, #08a642 0 62deg, #ff9d00 62deg 118deg, #f20d18 118deg 180deg, transparent 180deg);
+        }
+        .efficiency:after {
+          content: "";
+          position: absolute;
+          top: 17px;
+          width: clamp(206px, 22.3vh, 246px);
+          height: clamp(72px, 7.85vh, 85px);
+          border-radius: 50% 50% 0 0 / 100% 100% 0 0;
+          background: #fff;
+        }
+        .eff-value {
+          color: var(--orange);
+          font-size: 31px;
+          font-weight: 700;
+          line-height: 31px;
+          position: relative;
+          z-index: 2;
+          top: -14px;
+        }
+        .eff-note {
+          color: #061637;
+          font-size: 11px;
+          font-weight: 500;
+          line-height: 14px;
+          text-align: center;
+          position: relative;
+          z-index: 2;
+          top: 12px;
+        }
+        .needle { position:absolute; top:4px; left:50%; width:4px; height:52px; background:#06265b; border-radius:4px; transform-origin:50% 100%; transform:translateX(-50%) rotate(-8deg); z-index:3; }
+        .legend-dot { display:inline-block; width:9px; height:9px; border-radius:50%; margin:0 5px 0 12px; }
+        .table-title {
+          color: var(--blue);
+          font-size: 14px;
+          font-weight: 700;
+          line-height: 18px;
+          margin: 17px 0 5px;
+        }
+        [data-testid="stDataFrame"] {
+          border: 1px solid var(--line);
+          border-radius: 8px;
+          overflow: hidden;
+          box-shadow: 0 10px 26px rgba(0,20,90,.035);
+        }
+        .stDownloadButton button {
+          border: 1px solid #dbe5f4;
+          border-radius: 8px;
+          background: #ffffff;
+          color: var(--blue);
+          font-weight: 700;
+          line-height: 18px;
+          height: 36px !important;
+          min-height: 36px !important;
+          white-space: nowrap;
+          padding-left: 14px;
+          padding-right: 14px;
+        }
+        .stDownloadButton button:before {
+          content: "";
+          width: 16px;
+          height: 16px;
+          background: center / 16px 16px no-repeat url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%230528f7' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 3v12m0 0 5-5m-5 5-5-5M5 21h14'/%3E%3C/svg%3E");
+        }
+        .stDownloadButton { position:relative; left:-9px; top:3px; width:235px; }
+        [data-testid="stHorizontalBlock"]:has(.stDownloadButton) { justify-content:flex-end; }
+        [data-testid="stHorizontalBlock"]:has(.stDownloadButton) > [data-testid="stColumn"]:last-child {
+          flex:0 0 235px !important;
+          width:235px !important;
+          min-width:235px !important;
+        }
+        [data-testid="stHorizontalBlock"] { gap: 16px; }
+        [data-testid="stHorizontalBlock"]:has(.top-filter) { gap: 32px; }
+        [data-testid="stHorizontalBlock"]:has(.kpi-card) { position:relative; left:-5px; gap:18px; width:calc(100% - 3px); }
+        [data-testid="stHorizontalBlock"]:has(.panel) { position:relative; left:-9px; gap:17px; width:calc(100% + 3px); }
+        [data-testid="stDataFrame"] { font-size: 11px; }
+        .campaign-table-wrap { position:relative; left:-10px; top:-10px; width:calc(100% + 10px); overflow:hidden; border:1px solid var(--line); border-radius:8px; background:#fff; box-shadow:0 8px 22px rgba(0,20,90,.035); }
+        .campaign-table { width:100%; border-collapse:collapse; table-layout:fixed; font-size:10px; line-height:13px; color:var(--blue); }
+        .campaign-table th,.campaign-table td { height:26px; padding:4px 6px; border-bottom:1px solid #e7edf6; text-align:center; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+        .campaign-table th { font-size:9px; font-weight:700; line-height:12px; color:var(--blue); background:#fff; }
+        .campaign-table td { font-weight:500; }
+        .campaign-table th:nth-child(4),.campaign-table td:nth-child(4) { width:20%; text-align:left; }
+        .campaign-table th:first-child,.campaign-table td:first-child { width:8%; text-align:left; }
+        .campaign-table tr:last-child td { border-bottom:0; }
+        [data-testid="stAppDeployButton"] { display:none !important; }
+        body:has(#dashboard-theme[data-theme="dark"]) .top-filter,
+        body:has(#dashboard-theme[data-theme="dark"]) .kpi-card,
+        body:has(#dashboard-theme[data-theme="dark"]) .panel,
+        body:has(#dashboard-theme[data-theme="dark"]) .campaign-table-wrap,
+        body:has(#dashboard-theme[data-theme="dark"]) .campaign-table th,
+        body:has(#dashboard-theme[data-theme="dark"]) .campaign-table td,
+        body:has(#dashboard-theme[data-theme="dark"]) .stDownloadButton button {
+          background: var(--card-bg) !important;
+          border-color: var(--border) !important;
+          color: var(--text-main) !important;
+        }
+        body:has(#dashboard-theme[data-theme="dark"]) .filter-value { background:var(--field-bg); border-color:var(--border); }
+        body:has(#dashboard-theme[data-theme="dark"]) .kpi-note,
+        body:has(#dashboard-theme[data-theme="dark"]) .progress-label,
+        body:has(#dashboard-theme[data-theme="dark"]) .eff-note { color:var(--text-secondary); }
+        body:has(#dashboard-theme[data-theme="dark"]) .gauge-hole { fill:var(--card-bg); }
+        body:has(#dashboard-theme[data-theme="dark"]) .bar { background:var(--surface-muted); border-color:var(--border); }
+        body:has(#dashboard-theme[data-theme="dark"]) .kpi-wallet .kpi-value,
+        body:has(#dashboard-theme[data-theme="dark"]) .kpi-wallet .kpi-icon { color:#4f73ff; }
+
+        .kpi-card { display:flex; flex-direction:column; justify-content:flex-start; }
+        .kpi-value { margin:10px 0 6px; }
+        .kpi-notes { min-height:43px; display:flex; flex-direction:column; justify-content:space-between; }
+        .kpi-note { display:flex; align-items:center; gap:6px; color:var(--text-secondary); }
+        .kpi-note .svg-icon { width:15px; height:15px; flex:0 0 auto; stroke-width:2; }
+        .kpi-note.primary { color:var(--accent); font-weight:700; }
+        .kpi-note.secondary { color:var(--blue); font-weight:700; }
+        .kpi-card.delta .kpi-notes { justify-content:flex-start; text-align:center; }
+        .kpi-card.delta .kpi-note { justify-content:center; color:var(--orange); }
+
+        .svg-gauge { position:relative; width:min(100%,270px); height:166px; margin:0 auto; }
+        .svg-gauge svg { display:block; width:100%; height:132px; overflow:visible; }
+        .gauge-track { fill:none; stroke:var(--surface-muted); stroke-width:14; stroke-linecap:round; }
+        .gauge-progress { fill:none; stroke:#19b6ef; stroke-width:14; stroke-linecap:round; }
+        .gauge-needle { stroke:#174f99; stroke-width:6; stroke-linecap:round; }
+        .gauge-needle-shape { fill:#174f99; }
+        .gauge-pin { stroke:var(--card-bg); stroke-width:2; }
+        .lead-pin { fill:#19b6ef; }
+        .cpl-pin { fill:#ff9d00; }
+        .svg-gauge-value { position:absolute; left:0; right:0; top:55px; text-align:center; color:var(--blue); font-size:31px; line-height:31px; font-weight:700; }
+        .svg-gauge-caption { position:absolute; left:0; right:0; top:91px; text-align:center; color:var(--blue); font-size:12px; line-height:16px; font-weight:700; }
+        .svg-gauge-target { position:absolute; left:0; right:0; top:145px; text-align:center; color:var(--blue); font-size:11px; line-height:14px; font-weight:700; }
+
+        .cpl-gauge { position:relative; width:min(100%,310px); height:166px; margin:0 auto; }
+        .cpl-gauge svg { display:block; width:100%; height:130px; overflow:visible; }
+        .cpl-arc { fill:none; stroke-width:14; stroke-linecap:round; }
+        .cpl-gauge-value { position:absolute; left:0; right:0; top:102px; text-align:center; font-size:31px; line-height:31px; font-weight:700; color:var(--eff-color); }
+        .cpl-gauge .eff-note { position:absolute; left:-65px; right:-65px; top:145px; display:flex; align-items:center; justify-content:center; white-space:nowrap; color:var(--text-main); font-size:9px; line-height:13px; }
+
+        @media (min-width: 1280px) {
+          [data-testid="stSidebar"] { width:265px !important; min-width:265px !important; max-width:265px !important; }
+          [data-testid="stSidebar"] > div:first-child { width:265px !important; min-width:265px !important; max-width:265px !important; }
+          .period-filter .filter-value { min-width:310px; white-space:nowrap; }
+          .side-card { width:233px; }
+        }
+        @media (min-width: 768px) and (max-width: 1279px) {
+          [data-testid="stSidebar"] { width:240px !important; min-width:240px !important; }
+          .side-card { width:208px; }
+          .block-container { padding:12px 18px 28px; }
+          [data-testid="stHorizontalBlock"]:has(.kpi-card) { flex-wrap:wrap; }
+          [data-testid="stHorizontalBlock"]:has(.kpi-card) > [data-testid="stColumn"] { flex:0 0 calc(50% - 9px) !important; width:calc(50% - 9px) !important; }
+          [data-testid="stHorizontalBlock"]:has(.panel) { flex-wrap:wrap; }
+          [data-testid="stHorizontalBlock"]:has(.panel) > [data-testid="stColumn"] { flex:0 0 100% !important; width:100% !important; }
+          .panel { height:245px; margin-bottom:14px; }
+          .project-filter .filter-value,.period-filter .filter-value { width:100%; }
+          [data-testid="stColumn"]:has(.filter-card-label) .stSelectbox,
+          [data-testid="stColumn"]:has(.filter-card-label) .stDateInput { width:100%; }
+          .campaign-table-wrap { overflow-x:auto; }
+          .campaign-table { min-width:1180px; }
+        }
+        @media (max-width: 767px) {
+          [data-testid="stSidebar"] { width:250px !important; min-width:250px !important; }
+          .side-card { width:218px; }
+          .block-container { padding:12px 14px 28px; }
+          .page-title { font-size:25px; line-height:30px; margin-right:90px; }
+          .header-actions { right:12px; gap:7px; }
+          .header-action { width:39px; height:39px; }
+          [data-testid="stHorizontalBlock"]:has(.top-filter),
+          [data-testid="stHorizontalBlock"]:has(.filter-card-label),
+          [data-testid="stHorizontalBlock"]:has(.kpi-card),
+          [data-testid="stHorizontalBlock"]:has(.panel),
+          [data-testid="stHorizontalBlock"]:has(.table-title) { flex-wrap:wrap; gap:10px; left:0; width:100%; }
+          [data-testid="stHorizontalBlock"]:has(.top-filter) > [data-testid="stColumn"],
+          [data-testid="stHorizontalBlock"]:has(.filter-card-label) > [data-testid="stColumn"],
+          [data-testid="stHorizontalBlock"]:has(.kpi-card) > [data-testid="stColumn"],
+          [data-testid="stHorizontalBlock"]:has(.panel) > [data-testid="stColumn"],
+          [data-testid="stHorizontalBlock"]:has(.table-title) > [data-testid="stColumn"] { flex:0 0 100% !important; width:100% !important; }
+          .top-filter { height:auto; min-height:82px; margin-bottom:0; }
+          .project-filter .filter-value,.period-filter .filter-value { width:100%; }
+          [data-testid="stHorizontalBlock"]:has(.filter-card-label) { margin-bottom:10px; }
+          [data-testid="stHorizontalBlock"]:has(.filter-card-label) > [data-testid="stColumn"] { min-height:82px; }
+          [data-testid="stColumn"]:has(.filter-card-label) .stSelectbox,
+          [data-testid="stColumn"]:has(.filter-card-label) .stDateInput { width:100%; }
+          .period-filter .filter-value { white-space:nowrap; font-size:12px; }
+          .kpi-card { height:145px; margin-bottom:0; }
+          .panel { height:235px; margin-bottom:0; padding:14px 18px; }
+          .stDownloadButton { left:0; top:0; width:100%; }
+          [data-testid="stHorizontalBlock"]:has(.stDownloadButton) > [data-testid="stColumn"]:last-child {
+            flex:0 0 100% !important;
+            width:100% !important;
+            min-width:0 !important;
+          }
+          .campaign-table-wrap { left:0; top:0; width:100%; overflow-x:auto; }
+          .campaign-table { min-width:1180px; }
+          .cpl-gauge .eff-note { left:-10px; right:-10px; font-size:8px; }
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def render_sidebar(st, df):
+    st.sidebar.markdown(
+        f"""
+        <div class="brand">
+          <div class="brand-mark">{svg_icon("logo")}</div>
+          <div class="brand-title">Dynamica<br><span>Retail</span></div>
+        </div>
+        <div class="side-nav"><span class="nav-icon">{svg_icon("dashboard")}</span>Dashboard</div>
+        <div class="theme-toggle">{svg_icon("sun")}{svg_icon("moon")}</div>
+        """,
+        unsafe_allow_html=True,
+    )
+    st.sidebar.toggle("Tema scuro", key="dark_mode")
+
+    def options(column: str) -> list[str]:
+        values = sorted(str(value) for value in df[column].dropna().unique())
+        return ["Tutti"] + values
+
+    funnel = st.sidebar.selectbox("Funnel", options("funnel"))
+    platform = st.sidebar.selectbox("Piattaforma", options("platform"))
+    channel = st.sidebar.selectbox("Canale", options("channel"))
+    campaign = st.sidebar.selectbox("Campagna", options("campaign_name"))
+
+    st.sidebar.markdown(
+        f"""
+        <div class="side-card">
+          <div class="account-row"><div class="avatar">DR</div><div><div class="account-name">Dynamica Retail</div><div class="account-sub">Client account</div></div><div>{svg_icon("chevron-down")}</div></div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    filtered = df.copy()
+    for column, selected in {
+        "funnel": funnel,
+        "platform": platform,
+        "channel": channel,
+        "campaign_name": campaign,
+    }.items():
+        if selected != "Tutti":
+            filtered = filtered[filtered[column].astype(str) == selected]
+    return filtered
+
+
+def render_kpi_card(
+    st,
+    label: str,
+    value: str,
+    primary_note: str,
+    secondary_note: str,
+    color: str,
+    primary_icon: str | None = None,
+    secondary_icon: str | None = None,
+) -> None:
+    icon_name = {
+        "Speso totale": "wallet",
+        "Delta speso": "euro",
+        "Lead effettive": "users",
+        "CPL medio": "target",
+    }[label]
+    st.markdown(
+        f"""
+        <div class="kpi-card kpi-{icon_name} {'delta' if label == 'Delta speso' else ''}" style="--accent:{color}">
+          <div class="kpi-icon">{svg_icon(icon_name)}</div>
+          <div class="kpi-label">{label}</div>
+          <div class="kpi-value">{value}</div>
+          <div class="kpi-notes">
+            <div class="kpi-note primary">{svg_icon(primary_icon) if primary_icon else ''}<span>{primary_note}</span></div>
+            <div class="kpi-note secondary">{svg_icon(secondary_icon) if secondary_icon else ''}<span>{secondary_note or '&nbsp;'}</span></div>
+          </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def prepare_data(pd) -> "pd.DataFrame":
+    if not DATA_PATH.exists():
+        return pd.DataFrame()
+
+    df = pd.read_csv(DATA_PATH)
+    numeric_columns = [
+        "investimento_media",
+        "stima_lead_progressiva",
+        "lead_effettive",
+        "delta_lead",
+        "stima_spending_progressiva",
+        "speso_effettivo",
+        "delta_speso",
+        "delta_delivery_pct",
+        "cpl_target",
+        "cpl_effettivo",
+        "delta_cpl",
+    ]
+    for column in numeric_columns:
+        if column in df.columns:
+            df[column] = as_number(df[column])
+    return df
+
+
 def main() -> None:
-    """Render a tiny placeholder view or print a CLI summary."""
     try:
         import pandas as pd
         import streamlit as st
     except ImportError:
         metadata = load_last_update()
-        print(f"Dynamica Retail dashboard skeleton - status: {metadata.get('status')}")
+        print(f"Dynamica Retail dashboard - status: {metadata.get('status')}")
         return
 
     st.set_page_config(page_title="Dynamica Retail", layout="wide")
-    st.title("Dynamica Retail")
-    st.caption("Dashboard skeleton - dati mock locali")
+    if "dark_mode" not in st.session_state:
+        st.session_state.dark_mode = False
+    apply_style(st)
+    theme_name = "dark" if st.session_state.dark_mode else "light"
+    st.markdown(f'<div id="dashboard-theme" data-theme="{theme_name}"></div>', unsafe_allow_html=True)
 
     metadata = load_last_update()
-    st.json(metadata)
+    df = prepare_data(pd)
 
-    if DATA_PATH.exists():
-        df = pd.read_csv(DATA_PATH)
-        st.dataframe(df, use_container_width=True)
+    if df.empty:
+        st.error("Dati dashboard non disponibili.")
+        return
+
+    filtered = render_sidebar(st, df)
+
+    start_date = first_value(metadata, ["start_date"])
+    end_date = first_value(metadata, ["end_date"])
+    updated_at = first_value(metadata, ["updated_at"])
+    status = first_value(metadata, ["status"])
+
+    st.markdown(
+        '<div class="font-preload" aria-hidden="true"><span>Inter</span><span>Inter</span><span>Inter</span><span>Inter</span></div>'
+        f'<div class="header-actions"><div class="header-action">{svg_icon("bell")}</div><div class="header-action">{svg_icon("power")}</div></div>'
+        '<div class="page-title">Dashboard Dynamica Retail</div>',
+        unsafe_allow_html=True,
+    )
+
+    top_left, top_right = st.columns([1, 1.08], gap="large")
+    project_options = ["Tutti i progetti"] + sorted(
+        str(value) for value in df["campaign_name"].dropna().unique()
+    )
+    available_start = pd.to_datetime(start_date).date()
+    available_end = pd.to_datetime(end_date).date()
+    with top_left:
+        st.markdown(
+            '<div class="filter-card-label project-filter-label">Cliente / Progetto</div>',
+            unsafe_allow_html=True,
+        )
+        selected_project = st.selectbox(
+            "Cliente / Progetto",
+            project_options,
+            label_visibility="collapsed",
+            key="project_filter",
+        )
+    with top_right:
+        st.markdown(
+            '<div class="filter-card-label period-filter-label">Periodo</div>',
+            unsafe_allow_html=True,
+        )
+        selected_period = st.date_input(
+            "Periodo",
+            value=(available_start, available_end),
+            min_value=available_start,
+            max_value=available_end,
+            format="DD/MM/YYYY",
+            label_visibility="collapsed",
+            key="period_filter",
+        )
+
+    if selected_project != "Tutti i progetti":
+        filtered = filtered[filtered["campaign_name"].astype(str) == selected_project]
+    selected_end = (
+        selected_period[-1]
+        if isinstance(selected_period, (tuple, list)) and selected_period
+        else selected_period or available_end
+    )
+
+    spend_total = filtered["speso_effettivo"].sum(skipna=True)
+    budget_total = filtered["investimento_media"].sum(skipna=True)
+    planned_spend = filtered["stima_spending_progressiva"].sum(skipna=True)
+    delta_spend = spend_total - planned_spend
+    delivery_ratio = ratio(spend_total, planned_spend)
+    lead_available = filtered["lead_effettive"].notna().any()
+    lead_total = filtered["lead_effettive"].sum(skipna=True)
+    lead_target = filtered["stima_lead_progressiva"].sum(skipna=True)
+    lead_ratio = ratio(lead_total, lead_target) if lead_available else None
+    cpl_avg = ratio(spend_total, lead_total) if lead_available else None
+    cpl_target_avg = filtered["cpl_target"].mean(skipna=True)
+    short_end = selected_end.strftime("%d/%m")
+
+    spend_vs_plan = delivery_ratio - 1 if delivery_ratio is not None else None
+    spend_note = f"{percent(spend_vs_plan)} vs piano al {short_end}" if spend_vs_plan is not None else "— vs piano"
+    spend_icon = "trend-up" if spend_vs_plan is None or spend_vs_plan >= 0 else "trend-down"
+
+    if lead_ratio is None:
+        lead_note = "— vs stima"
+    elif abs(lead_ratio - 1) <= 0.05:
+        lead_note = f"in linea con stima al {short_end}"
     else:
-        st.warning("report_data.csv non trovato")
+        lead_note = f"{percent(lead_ratio - 1)} vs stima al {short_end}"
+
+    cpl_delta = cpl_avg - cpl_target_avg if cpl_avg is not None and not math.isnan(cpl_target_avg) else None
+    if cpl_delta is None:
+        cpl_note = "— vs CPL target"
+    else:
+        cpl_delta_text = money(abs(cpl_delta)).replace(" EUR", " €")
+        cpl_note = f"{'+' if cpl_delta >= 0 else '-'}{cpl_delta_text} vs CPL target"
+
+    kpi_cols = st.columns([.93, .95, 1.0, 1.03], gap="medium")
+    with kpi_cols[0]:
+        render_kpi_card(
+            st, "Speso totale", money(spend_total).replace(" EUR", " €"), spend_note,
+            f"Budget mese: {money(budget_total).replace(' EUR', ' €')}", "#0527ff", spend_icon, "check-circle"
+        )
+    with kpi_cols[1]:
+        render_kpi_card(
+            st, "Delta speso", money(delta_spend).replace(" EUR", " €"),
+            "vs spending pianificato", "", "#ff7a00"
+        )
+    with kpi_cols[2]:
+        render_kpi_card(
+            st, "Lead effettive", integer(lead_total) if lead_available else "—", lead_note,
+            f"Target progressivo: {integer(lead_target)}", "#18c77a", "check-circle", None
+        )
+    with kpi_cols[3]:
+        render_kpi_card(
+            st, "CPL medio", money(cpl_avg).replace(" EUR", " €") if cpl_avg is not None else "—", cpl_note,
+            f"CPL target medio: {money(cpl_target_avg).replace(' EUR', ' €')}", "#ff7a00", "trend-up", "target"
+        )
+
+    delivery_width = min(max((delivery_ratio or 0) * 100, 0), 120)
+    lead_width = min(max((lead_ratio or 0) * 100, 0), 120)
+    cpl_efficiency = None
+    if cpl_avg is not None and cpl_target_avg and not math.isnan(cpl_target_avg):
+        cpl_efficiency = (cpl_avg / cpl_target_avg) - 1
+
+    lead_fraction = min(max(lead_ratio if lead_ratio is not None else 1, 0), 1)
+    lead_progress = lead_fraction * 100
+    lead_needle_angle = math.radians(90 + lead_fraction * 80)
+    lead_needle_x = 196 + 36 * math.cos(lead_needle_angle)
+    lead_needle_y = 105 - 36 * math.sin(lead_needle_angle)
+    lead_perp_x = math.sin(lead_needle_angle) * 4
+    lead_perp_y = math.cos(lead_needle_angle) * 4
+    lead_base_1_x = lead_needle_x + lead_perp_x
+    lead_base_1_y = lead_needle_y + lead_perp_y
+    lead_base_2_x = lead_needle_x - lead_perp_x
+    lead_base_2_y = lead_needle_y - lead_perp_y
+    lead_progress_path = "<!-- progress unavailable -->"
+    if lead_ratio is not None and lead_progress > 0:
+        lead_progress_path = (
+            f'<path class="gauge-progress" pathLength="100" stroke-dasharray="{lead_progress:.1f} 100" '
+            'd="M20 105 A90 90 0 0 1 200 105"/>'
+        )
+
+    efficiency_for_needle = min(max(cpl_efficiency or 0, -0.2), 0.2)
+    efficiency_fraction = (efficiency_for_needle + 0.2) / 0.4
+    efficiency_angle = math.radians(180 - efficiency_fraction * 180)
+    efficiency_needle_x = 110 + 58 * math.cos(efficiency_angle)
+    efficiency_needle_y = 105 - 58 * math.sin(efficiency_angle)
+    efficiency_perp_x = math.sin(efficiency_angle) * 4
+    efficiency_perp_y = math.cos(efficiency_angle) * 4
+    efficiency_base_1_x = 110 + efficiency_perp_x
+    efficiency_base_1_y = 105 + efficiency_perp_y
+    efficiency_base_2_x = 110 - efficiency_perp_x
+    efficiency_base_2_y = 105 - efficiency_perp_y
+    if cpl_efficiency is None:
+        efficiency_color = "#ff8a00"
+    elif cpl_efficiency < -0.05:
+        efficiency_color = "#08a642"
+    elif cpl_efficiency <= 0.05:
+        efficiency_color = "#ff8a00"
+    else:
+        efficiency_color = "#f20d18"
+
+    middle = st.columns([.92, 1.55, 1.31], gap="medium")
+    with middle[0]:
+        st.markdown(
+            f"""
+            <div class="panel">
+              <div class="panel-title">Delivery Lead</div>
+              <div class="svg-gauge">
+                <svg viewBox="0 0 220 125" aria-hidden="true">
+                  <path class="gauge-track" pathLength="100" d="M20 105 A90 90 0 0 1 200 105"/>
+                  {lead_progress_path}
+                  <path class="gauge-needle-shape" d="M{lead_base_1_x:.1f} {lead_base_1_y:.1f} L{lead_base_2_x:.1f} {lead_base_2_y:.1f} L196 105 Z"/>
+                </svg>
+                <div class="svg-gauge-value">{percent(lead_ratio) if lead_ratio is not None else '—'}</div>
+                <div class="svg-gauge-caption">vs stima lead</div>
+                <div class="svg-gauge-target">Target: 100,0%</div>
+              </div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+    with middle[1]:
+        st.markdown(
+            f"""
+            <div class="panel progress-panel">
+              <div class="panel-title">Stato avanzamento campagne</div>
+              <div class="target-marker">TARGET</div>
+              <div class="progress-row">
+                <div class="progress-label"><span>Spending effettivo</span><span></span></div>
+                <div class="bar"><div class="bar-fill" style="--width:{delivery_width:.1f}%">{percent(delivery_ratio)}</div></div>
+              </div>
+              <div class="progress-row">
+                <div class="progress-label"><span>Lead effettive</span><span></span></div>
+                <div class="bar"><div class="bar-fill" style="--width:{lead_width:.1f}%">{percent(lead_ratio)}</div></div>
+              </div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+    with middle[2]:
+        st.markdown(
+            f"""
+            <div class="panel">
+              <div class="panel-title">Indice efficienza CPL</div>
+              <div class="cpl-gauge" style="--eff-color:{efficiency_color}">
+                <svg viewBox="0 0 220 125" aria-hidden="true">
+                  <path class="cpl-arc" stroke="#08a642" d="M20 105 A90 90 0 0 1 65 27.1"/>
+                  <path class="cpl-arc" stroke="#ff9d00" d="M65 27.1 A90 90 0 0 1 155 27.1"/>
+                  <path class="cpl-arc" stroke="#f20d18" d="M155 27.1 A90 90 0 0 1 200 105"/>
+                  <g transform="translate(0 -10)">
+                    <path class="gauge-needle-shape" d="M{efficiency_base_1_x:.1f} {efficiency_base_1_y:.1f} L{efficiency_base_2_x:.1f} {efficiency_base_2_y:.1f} L{efficiency_needle_x:.1f} {efficiency_needle_y:.1f} Z"/>
+                    <circle class="gauge-pin cpl-pin" cx="110" cy="105" r="7"/>
+                  </g>
+                </svg>
+                <div class="cpl-gauge-value">{percent(cpl_efficiency) if cpl_efficiency is not None else '—'}</div>
+                <div class="eff-note"><span class="legend-dot" style="background:#08a642"></span>verde = meglio del target <span class="legend-dot" style="background:#ff9d00"></span>giallo = in linea <span class="legend-dot" style="background:#f20d18"></span>rosso = sopra target</div>
+              </div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+    table_columns = {
+        "funnel": "Funnel",
+        "platform": "Platform",
+        "channel": "Canale",
+        "campaign_name": "Campagna",
+        "investimento_media": "Investimento Media",
+        "stima_lead_progressiva": "Stima Lead",
+        "lead_effettive": "Lead Effettive",
+        "delta_lead": "Delta Lead",
+        "stima_spending_progressiva": "Stima Spending",
+        "speso_effettivo": "Speso Effettivo",
+        "delta_speso": "Delta Speso",
+        "cpl_target": "CPL Target",
+        "cpl_effettivo": "CPL Effettivo",
+        "delta_cpl": "Delta CPL",
+        "action": "Action",
+    }
+    display_df = filtered[[column for column in table_columns if column in filtered.columns]].rename(columns=table_columns)
+
+    for column in ["Stima Lead", "Lead Effettive", "Delta Lead"]:
+        if column in display_df:
+            display_df[column] = display_df[column].map(integer)
+    for column in [
+        "Investimento Media",
+        "Stima Spending",
+        "Speso Effettivo",
+        "Delta Speso",
+        "CPL Target",
+        "CPL Effettivo",
+        "Delta CPL",
+    ]:
+        if column in display_df:
+            display_df[column] = display_df[column].map(money)
+
+    table_header, download_col = st.columns([1, .215])
+    with table_header:
+        st.markdown('<div class="table-title"></div>', unsafe_allow_html=True)
+    with download_col:
+        st.download_button(
+            "Scarica il report completo",
+            DATA_PATH.read_bytes(),
+            file_name="report_data.csv",
+            mime="text/csv",
+            width="stretch",
+        )
+
+    table_html = display_df.to_html(index=False, classes="campaign-table", border=0)
+    st.markdown(
+        f'<div class="campaign-table-wrap">{table_html}</div>',
+        unsafe_allow_html=True,
+    )
 
 
 if __name__ == "__main__":
