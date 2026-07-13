@@ -1,0 +1,12 @@
+.env
+google-ads.yaml
+service_account_google_sheet.json
+.streamlit/secrets.toml
+.venv/
+__pycache__/
+*.pyc
+logs/*.log
+data/raw/*.csv
+archive/
+data/*.db
+data/*.sqlite
