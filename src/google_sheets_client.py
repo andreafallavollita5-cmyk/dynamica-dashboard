@@ -75,7 +75,7 @@ def _load_sheet_config() -> dict[str, str]:
     if not ENV_PATH.exists():
         raise GoogleSheetConfigError(f"File .env non trovato: {ENV_PATH}")
 
-    load_dotenv(ENV_PATH)
+    load_dotenv(ENV_PATH, encoding="utf-8-sig")
     config = {
         "sheet_id": os.getenv("GOOGLE_SHEET_ID", "").strip(),
         "worksheet_name": os.getenv(
@@ -162,6 +162,8 @@ def _rows_from_values(values: list[list[str]]) -> list[dict]:
         raise GoogleSheetReadError("Worksheet manual_inputs vuoto.")
 
     columns = _normalize_header(values[0])
+    if not all(column in columns for column in REQUIRED_COLUMNS):
+        return _rows_from_legacy_dashboard(values)
     _validate_columns(columns)
 
     rows = []
@@ -170,6 +172,59 @@ def _rows_from_values(values: list[list[str]]) -> list[dict]:
         row = {column: padded[index] for index, column in enumerate(columns)}
         if any(str(value).strip() for value in row.values()):
             rows.append(_normalize_row(row))
+    return rows
+
+
+def _rows_from_legacy_dashboard(values: list[list[str]]) -> list[dict]:
+    """Read the existing agency worksheet without changing its visual layout."""
+    header = [str(value).strip().casefold() for value in values[0]]
+    expected_markers = {"funnel", "id campagna", "campagna", "investimento media"}
+    if not expected_markers.issubset(set(header)):
+        _validate_columns(_normalize_header(values[0]))
+
+    rows: list[dict] = []
+    current_funnel = ""
+    for excel_row, raw_row in enumerate(values[1:], start=2):
+        padded = raw_row + [""] * max(0, 23 - len(raw_row))
+        funnel = str(padded[0]).strip()
+        platform = str(padded[1]).strip()
+        channel = str(padded[2]).strip()
+        campaign_id = str(padded[3]).strip()
+        campaign_name = str(padded[4]).strip()
+
+        if funnel and not funnel.casefold().startswith("tot "):
+            current_funnel = funnel
+        if not platform or not campaign_name:
+            continue
+
+        platform_key = platform.casefold()
+        rows.append(
+            _normalize_row(
+                {
+                    "excel_row": excel_row,
+                    "funnel": funnel or current_funnel,
+                    "platform": platform,
+                    "channel": channel,
+                    "campaign_name": campaign_name,
+                    "investimento_media": padded[5],
+                    "percentuale_investimento": padded[6],
+                    "cpp_medio": padded[7],
+                    "stima_pratiche": padded[8],
+                    "cpl_target": padded[9],
+                    "stima_lead": padded[10],
+                    "lead_effettive_manual": padded[13],
+                    "action": padded[22],
+                    "google_campaign_id": campaign_id if "google" in platform_key else "",
+                    "meta_campaign_id": campaign_id if "meta" in platform_key else "",
+                    "dynamics_campaign_key": "",
+                    "enabled": "true",
+                }
+            )
+        )
+    if not rows:
+        raise GoogleSheetReadError(
+            "Il worksheet non contiene righe campagna riconoscibili."
+        )
     return rows
 
 

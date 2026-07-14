@@ -13,6 +13,7 @@ class Settings:
     client_name: str = "Dynamica Retail"
     timezone: str = "Europe/Rome"
     dynamics_enabled: bool = False
+    local_verification_mode: bool = False
 
 
 def load_settings() -> Settings:
@@ -21,4 +22,7 @@ def load_settings() -> Settings:
         client_name=os.getenv("CLIENT_NAME", "Dynamica Retail"),
         timezone=os.getenv("TIMEZONE", "Europe/Rome"),
         dynamics_enabled=os.getenv("DYNAMICS_ENABLED", "false").lower() == "true",
+        local_verification_mode=os.getenv(
+            "LOCAL_VERIFICATION_MODE", "false"
+        ).lower() == "true",
     )

@@ -16,7 +16,7 @@ GRAPH_HOST = "https://graph.facebook.com"
 
 
 def load_meta_settings() -> dict[str, str]:
-    load_dotenv(ENV_PATH)
+    load_dotenv(ENV_PATH, encoding="utf-8-sig")
     return {
         "app_id": os.getenv("META_APP_ID", "").strip(),
         "access_token": os.getenv("META_ACCESS_TOKEN", "").strip(),

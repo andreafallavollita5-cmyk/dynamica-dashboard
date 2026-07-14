@@ -1,5 +1,33 @@
 # Ads local export
 
+## Aggiornamento speso dashboard
+
+Questo comando legge in sola lettura Google Sheet, Google Ads e Meta Ads per il
+periodo dal primo giorno del mese a ieri, quindi rigenera il CSV latest:
+
+```powershell
+.\.venv\Scripts\python.exe -m src.build_report_data
+```
+
+Lo speso viene associato prima tramite `google_campaign_id` o
+`meta_campaign_id`; il nome è usato come fallback solo quando l'ID non è
+presente. Conversioni Google e azioni/lead Meta non vengono richieste né usate
+come lead effettive.
+
+## Verifica locale API
+
+Sul solo PC aziendale impostare nel file `.env`:
+
+```text
+LOCAL_VERIFICATION_MODE=true
+```
+
+Avviare poi `streamlit run app.py`. In fondo alla dashboard comparirà la sezione
+richiudibile **Verifica locale collegamenti Ads**. Il pulsante interroga entrambe
+le API in sola lettura e mostra piattaforma, campaign ID, nome, periodo, speso,
+stato ed errore semplice. Lasciare il flag assente o `false` su Streamlit Cloud:
+la sezione non viene renderizzata nella versione cliente.
+
 Questo progetto fa tre cose:
 
 1. genera un `refresh_token` OAuth per Google Ads;

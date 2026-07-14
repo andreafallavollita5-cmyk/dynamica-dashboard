@@ -13,7 +13,7 @@ ENV_PATH = ROOT / ".env"
 
 
 def load_settings() -> dict[str, str]:
-    load_dotenv(ENV_PATH)
+    load_dotenv(ENV_PATH, encoding="utf-8-sig")
     return {
         "developer_token": os.getenv("GOOGLE_ADS_DEVELOPER_TOKEN", "").strip(),
         "client_secrets_path": os.getenv("GOOGLE_ADS_CLIENT_SECRETS_PATH", "").strip(),

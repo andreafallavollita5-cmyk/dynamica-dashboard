@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import math
+import os
 from pathlib import Path
 from typing import Iterable
 
@@ -265,7 +266,7 @@ def apply_style(st) -> None:
           bottom: 4.6vh;
           width: calc(min(16.1vw, 310px) - 32px);
         }
-        .account-row { display:grid; grid-template-columns:46px 1fr 18px; align-items:center; gap:10px; }
+        .account-row { display:grid; grid-template-columns:46px 1fr; align-items:center; gap:10px; }
         .avatar { width:43px; height:43px; display:grid; place-items:center; border-radius:50%; background:#fff; color:#1236cf !important; font-size:17px; font-weight:700; line-height:20px; }
         .account-name { font-size:14px; font-weight:700; line-height:18px; }
         .account-sub { color:#9fb1d3 !important; font-size:12px; font-weight:400; line-height:15px; margin-top:5px; }
@@ -362,6 +363,13 @@ def apply_style(st) -> None:
           color: var(--blue-strong) !important;
           border-color: var(--border) !important;
           font-weight:700;
+        }
+        .stDateInput input {
+          padding-right:40px !important;
+          background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%230528f7' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E") !important;
+          background-repeat:no-repeat !important;
+          background-position:right 12px center !important;
+          background-size:17px 17px !important;
         }
         .kpi-card {
           position: relative;
@@ -736,7 +744,7 @@ def render_sidebar(st, df):
     st.sidebar.markdown(
         f"""
         <div class="side-card">
-          <div class="account-row"><div class="avatar">DR</div><div><div class="account-name">Dynamica Retail</div><div class="account-sub">Client account</div></div><div>{svg_icon("chevron-down")}</div></div>
+          <div class="account-row"><div class="avatar">DR</div><div><div class="account-name">Dynamica Retail</div><div class="account-sub">Client account</div></div></div>
         </div>
         """,
         unsafe_allow_html=True,
@@ -808,6 +816,65 @@ def prepare_data(pd) -> "pd.DataFrame":
         if column in df.columns:
             df[column] = as_number(df[column])
     return df
+
+
+def local_verification_enabled() -> bool:
+    """Keep API verification opt-in and absent from the client deployment."""
+    try:
+        from dotenv import load_dotenv
+
+        load_dotenv(Path(__file__).with_name(".env"), encoding="utf-8-sig")
+    except ImportError:
+        pass
+    return os.getenv("LOCAL_VERIFICATION_MODE", "false").strip().lower() == "true"
+
+
+def render_local_ads_verification(st, pd, metadata: dict) -> None:
+    """Render real read-only API checks only when explicitly enabled locally."""
+    if not local_verification_enabled():
+        return
+
+    from src.ads_verification import verify_ads_connections
+    from src.dates import current_month_until_yesterday
+
+    fallback_start, fallback_end = current_month_until_yesterday()
+    start_date = str(metadata.get("start_date") or fallback_start.isoformat())
+    end_date = str(metadata.get("end_date") or fallback_end.isoformat())
+
+    with st.expander("Verifica locale collegamenti Ads", expanded=False):
+        st.caption(
+            "Controllo locale in sola lettura. Questa sezione non è attiva nella versione cliente."
+        )
+        if st.button("Interroga Google Ads e Meta Ads", key="run_ads_verification"):
+            with st.spinner("Lettura API in corso…"):
+                st.session_state["ads_verification_rows"] = verify_ads_connections(
+                    start_date, end_date
+                )
+
+        rows = st.session_state.get("ads_verification_rows")
+        if not rows:
+            st.info("Avvia la verifica per leggere i dati reali dello stesso periodo del report.")
+            return
+
+        verification_df = pd.DataFrame(rows).rename(
+            columns={
+                "platform": "Piattaforma",
+                "campaign_id": "Campaign ID",
+                "campaign_name": "Campaign name",
+                "periodo_interrogato": "Periodo interrogato",
+                "speso_estratto": "Speso estratto",
+                "stato_collegamento": "Stato del collegamento",
+                "errore": "Errore",
+            }
+        )
+        st.dataframe(
+            verification_df,
+            width="stretch",
+            hide_index=True,
+            column_config={
+                "Speso estratto": st.column_config.NumberColumn(format="€ %.2f"),
+            },
+        )
 
 
 def main() -> None:
@@ -887,16 +954,17 @@ def main() -> None:
         else selected_period or available_end
     )
 
-    spend_total = filtered["speso_effettivo"].sum(skipna=True)
+    spend_available = filtered["speso_effettivo"].notna().any()
+    spend_total = filtered["speso_effettivo"].sum(skipna=True) if spend_available else None
     budget_total = filtered["investimento_media"].sum(skipna=True)
     planned_spend = filtered["stima_spending_progressiva"].sum(skipna=True)
-    delta_spend = spend_total - planned_spend
-    delivery_ratio = ratio(spend_total, planned_spend)
+    delta_spend = spend_total - planned_spend if spend_total is not None else None
+    delivery_ratio = ratio(spend_total, planned_spend) if spend_total is not None else None
     lead_available = filtered["lead_effettive"].notna().any()
     lead_total = filtered["lead_effettive"].sum(skipna=True)
     lead_target = filtered["stima_lead_progressiva"].sum(skipna=True)
     lead_ratio = ratio(lead_total, lead_target) if lead_available else None
-    cpl_avg = ratio(spend_total, lead_total) if lead_available else None
+    cpl_avg = ratio(spend_total, lead_total) if lead_available and spend_total is not None else None
     cpl_target_avg = filtered["cpl_target"].mean(skipna=True)
     short_end = selected_end.strftime("%d/%m")
 
@@ -932,7 +1000,7 @@ def main() -> None:
     with kpi_cols[2]:
         render_kpi_card(
             st, "Lead effettive", integer(lead_total) if lead_available else "—", lead_note,
-            f"Target progressivo: {integer(lead_target)}", "#18c77a", "check-circle", None
+            "", "#18c77a", "check-circle", None
         )
     with kpi_cols[3]:
         render_kpi_card(
@@ -1096,6 +1164,8 @@ def main() -> None:
         f'<div class="campaign-table-wrap">{table_html}</div>',
         unsafe_allow_html=True,
     )
+
+    render_local_ads_verification(st, pd, metadata)
 
 
 if __name__ == "__main__":
