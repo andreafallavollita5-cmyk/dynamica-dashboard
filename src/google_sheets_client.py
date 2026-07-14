@@ -184,6 +184,8 @@ def _rows_from_legacy_dashboard(values: list[list[str]]) -> list[dict]:
 
     rows: list[dict] = []
     current_funnel = ""
+    current_platform = ""
+    current_channel = ""
     for excel_row, raw_row in enumerate(values[1:], start=2):
         padded = raw_row + [""] * max(0, 23 - len(raw_row))
         funnel = str(padded[0]).strip()
@@ -194,17 +196,23 @@ def _rows_from_legacy_dashboard(values: list[list[str]]) -> list[dict]:
 
         if funnel and not funnel.casefold().startswith("tot "):
             current_funnel = funnel
-        if not platform or not campaign_name:
+        if platform:
+            current_platform = platform
+        if channel:
+            current_channel = channel
+        effective_platform = platform or current_platform
+        effective_channel = channel or current_channel
+        if not effective_platform or not campaign_name:
             continue
 
-        platform_key = platform.casefold()
+        platform_key = effective_platform.casefold()
         rows.append(
             _normalize_row(
                 {
                     "excel_row": excel_row,
                     "funnel": funnel or current_funnel,
-                    "platform": platform,
-                    "channel": channel,
+                    "platform": effective_platform,
+                    "channel": effective_channel,
                     "campaign_name": campaign_name,
                     "investimento_media": padded[5],
                     "percentuale_investimento": padded[6],

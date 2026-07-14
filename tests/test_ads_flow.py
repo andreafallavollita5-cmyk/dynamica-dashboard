@@ -103,14 +103,18 @@ class AdsReportFlowTests(unittest.TestCase):
             ["Lead Veloce", "Google", "Search", "123", "Campagna G",
              "1.000,00 €", "10%", "", "", "20,00 €", "50", "", "", "7",
              "", "", "", "", "", "", "", "", "Action manuale"],
+            ["", "", "", "124", "Campagna G nuova"],
             ["", "Meta", "Display", "456", "Campagna M", "500,00 €"],
             ["TOT Lead Veloce", "", "", "", "", "1.500,00 €"],
         ]
         rows = _rows_from_values(values)
-        self.assertEqual(len(rows), 2)
+        self.assertEqual(len(rows), 3)
         self.assertEqual(rows[0]["google_campaign_id"], "123")
-        self.assertEqual(rows[1]["meta_campaign_id"], "456")
-        self.assertEqual(rows[1]["funnel"], "Lead Veloce")
+        self.assertEqual(rows[1]["google_campaign_id"], "124")
+        self.assertEqual(rows[1]["platform"], "Google")
+        self.assertEqual(rows[1]["channel"], "Search")
+        self.assertEqual(rows[2]["meta_campaign_id"], "456")
+        self.assertEqual(rows[2]["funnel"], "Lead Veloce")
         self.assertEqual(rows[0]["action"], "Action manuale")
 
     def test_google_query_is_read_only_and_excludes_conversions(self):
