@@ -7,6 +7,14 @@ __pycache__/
 *.pyc
 logs/*.log
 data/raw/*.csv
+data/input/
+data/report_daily.csv
+data/spend_daily.csv
+data/spend_daily_status.json
+data/report_daily_status.json
 archive/
 data/*.db
 data/*.sqlite
+.codex_tmp/
+outputs/
+exports/Report_Dynamica_20??-??-??.xlsx

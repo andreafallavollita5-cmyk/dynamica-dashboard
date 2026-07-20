@@ -15,6 +15,9 @@ from pathlib import Path
 import gspread
 from dotenv import load_dotenv
 from gspread.exceptions import APIError, SpreadsheetNotFound, WorksheetNotFound
+from gspread.utils import ValueRenderOption
+
+from src.report_groups import CLIENT_GROUPS, SUMMARY_FIELDS
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -54,6 +57,38 @@ STRING_COLUMNS = {
 }
 
 NUMERIC_COLUMNS = set(REQUIRED_COLUMNS) - STRING_COLUMNS
+SUMMARY_SOURCE_COLUMNS = {
+    *(f"sheet_total_{field}" for field in SUMMARY_FIELDS),
+    *(
+        f"sheet_{slug}_{field}_subtotal"
+        for slug, _label in CLIENT_GROUPS
+        for field in SUMMARY_FIELDS
+    ),
+}
+LEGACY_DERIVED_COLUMNS = {
+    "stima_lead_giornaliere",
+    "stima_lead_progressiva",
+    "delta_lead",
+    "stima_spesa_giornaliero",
+    "stima_spending_progressiva",
+    "speso_effettivo_manual",
+    "delta_speso",
+    "delta_delivery_pct",
+    "cpl_effettivo",
+    "delta_cpl",
+    "sheet_total_investimento_media",
+    "sheet_total_cpl_target",
+    "sheet_total_stima_lead_progressiva",
+    "sheet_total_lead_effettive",
+    "sheet_total_stima_spending_progressiva",
+    "sheet_total_speso_effettivo_manual",
+    "sheet_total_delta_speso_manual",
+    "sheet_total_delta_delivery_pct_manual",
+    "sheet_total_cpl_effettivo_manual",
+    "sheet_area_clienti_stima_lead_progressiva_subtotal",
+    "sheet_area_clienti_lead_effettive_subtotal",
+    *SUMMARY_SOURCE_COLUMNS,
+}
 TRUE_VALUES = {"true", "1", "yes", "y", "si", "sì", "x"}
 TARGET_ROW = {
     "funnel": "Lead Veloce",
@@ -144,11 +179,13 @@ def _parse_number(value: str) -> float | int | None | str:
 
 def _normalize_row(row: dict[str, str]) -> dict:
     normalized = dict(row)
-    for column in REQUIRED_COLUMNS:
+    for column in [*REQUIRED_COLUMNS, *LEGACY_DERIVED_COLUMNS]:
+        if column not in normalized:
+            continue
         value = normalized.get(column, "")
         if column in STRING_COLUMNS:
             normalized[column] = str(value).strip()
-        elif column in NUMERIC_COLUMNS:
+        elif column in NUMERIC_COLUMNS or column in LEGACY_DERIVED_COLUMNS:
             normalized[column] = _parse_number(value)
     return normalized
 
@@ -182,6 +219,35 @@ def _rows_from_legacy_dashboard(values: list[list[str]]) -> list[dict]:
     if not expected_markers.issubset(set(header)):
         _validate_columns(_normalize_header(values[0]))
 
+    summary_indexes = dict(zip(SUMMARY_FIELDS, range(5, 22)))
+
+    def summary_values(
+        raw_row: list[object], prefix: str, suffix: str = ""
+    ) -> dict[str, object]:
+        return {
+            f"{prefix}{field}{suffix}": raw_row[index]
+            for field, index in summary_indexes.items()
+        }
+
+    sheet_totals: dict[str, object] = {}
+    sheet_subtotals: dict[str, object] = {}
+    subtotal_labels = {
+        f"tot {label}".casefold(): slug for slug, label in CLIENT_GROUPS
+    }
+    for raw_row in values[1:]:
+        padded = raw_row + [""] * max(0, 23 - len(raw_row))
+        label = str(padded[0]).strip().casefold()
+        if label in subtotal_labels:
+            slug = subtotal_labels[label]
+            sheet_subtotals.update(
+                summary_values(padded, f"sheet_{slug}_", "_subtotal")
+            )
+        first_cells_blank = not any(str(padded[index]).strip() for index in range(5))
+        total_investment = _parse_number(padded[5])
+        total_percentage = _parse_number(padded[6])
+        if first_cells_blank and total_investment and total_percentage == 1:
+            sheet_totals = summary_values(padded, "sheet_total_")
+
     rows: list[dict] = []
     current_funnel = ""
     current_platform = ""
@@ -206,6 +272,8 @@ def _rows_from_legacy_dashboard(values: list[list[str]]) -> list[dict]:
             continue
 
         platform_key = effective_platform.casefold()
+        ads_platform = "google" in platform_key or "meta" in platform_key
+        enabled = "false" if ads_platform and not campaign_id else "true"
         rows.append(
             _normalize_row(
                 {
@@ -220,12 +288,24 @@ def _rows_from_legacy_dashboard(values: list[list[str]]) -> list[dict]:
                     "stima_pratiche": padded[8],
                     "cpl_target": padded[9],
                     "stima_lead": padded[10],
+                    "stima_lead_giornaliere": padded[11],
+                    "stima_lead_progressiva": padded[12],
                     "lead_effettive_manual": padded[13],
+                    "delta_lead": padded[14],
+                    "stima_spesa_giornaliero": padded[15],
+                    "stima_spending_progressiva": padded[16],
+                    "speso_effettivo_manual": padded[17],
+                    "delta_speso": padded[18],
+                    "delta_delivery_pct": padded[19],
+                    "cpl_effettivo": padded[20],
+                    "delta_cpl": padded[21],
                     "action": padded[22],
                     "google_campaign_id": campaign_id if "google" in platform_key else "",
                     "meta_campaign_id": campaign_id if "meta" in platform_key else "",
                     "dynamics_campaign_key": "",
-                    "enabled": "true",
+                    "enabled": enabled,
+                    **sheet_totals,
+                    **sheet_subtotals,
                 }
             )
         )
@@ -261,7 +341,9 @@ def fetch_manual_plan_from_google_sheet() -> list[dict]:
         client = gspread.service_account(filename=str(service_account_path))
         spreadsheet = client.open_by_key(config["sheet_id"])
         worksheet = spreadsheet.worksheet(config["worksheet_name"])
-        values = worksheet.get_all_values()
+        values = worksheet.get_all_values(
+            value_render_option=ValueRenderOption.unformatted
+        )
     except SpreadsheetNotFound as exc:
         raise GoogleSheetReadError(
             "Google Sheet non trovato o non condiviso con il service account."
@@ -310,7 +392,9 @@ def main() -> int:
         worksheet = client.open_by_key(config["sheet_id"]).worksheet(
             config["worksheet_name"]
         )
-        values = worksheet.get_all_values()
+        values = worksheet.get_all_values(
+            value_render_option=ValueRenderOption.unformatted
+        )
         columns = _normalize_header(values[0]) if values else []
         all_rows = _rows_from_values(values)
         _write_raw_csv(all_rows)

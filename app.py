@@ -3,14 +3,52 @@
 from __future__ import annotations
 
 import json
+import html
 import math
 import os
+from datetime import date, timedelta
 from pathlib import Path
+from tempfile import TemporaryDirectory
 from typing import Iterable
 
 
 DATA_PATH = Path("data/report_data.csv")
+REPORT_DAILY_PATH = Path("data/report_daily.csv")
+REPORT_DAILY_STATUS_PATH = Path("data/report_daily_status.json")
 LAST_UPDATE_PATH = Path("data/last_update.json")
+
+DASHBOARD_TABLE_COLUMNS = {
+    "funnel": "Funnel",
+    "channel": "Canale",
+    "campaign_name": "Campagna",
+    "stima_lead_progressiva": "Stima Lead",
+    "lead_effettive": "Lead Effettive",
+    "delta_lead": "Delta Lead",
+    "stima_spending_progressiva": "Stima Spending",
+    "speso_effettivo": "Speso Effettivo",
+    "delta_speso": "Delta Speso",
+    "cpl_target": "CPL Target",
+    "cpl_effettivo": "CPL Effettivo",
+    "delta_cpl": "Delta CPL",
+    "action": "Action",
+}
+
+DASHBOARD_SUMMARY_FIELDS = (
+    "stima_lead_progressiva",
+    "lead_effettive",
+    "delta_lead",
+    "stima_spending_progressiva",
+    "speso_effettivo",
+    "delta_speso",
+    "cpl_target",
+    "cpl_effettivo",
+    "delta_cpl",
+)
+EXCLUDED_CAMPAIGN_NAMES = {
+    "dyn_veloce leadgen dip - cqd | cbo scaling (f3)",
+    "recruitment assicuratori 2026",
+}
+EXCLUDED_CAMPAIGN_IDS = {"6936446163375"}
 
 SVG_ICONS = {
     "logo": '<svg viewBox="0 0 48 48" aria-hidden="true"><path fill="#16d8ee" d="M24 2 45 13 24 25 3 13Z"/><path fill="#0ca9ef" d="M3 13 24 25v21L3 35Z"/><path fill="#22cf71" d="M45 13 24 25v21l21-11Z"/><path fill="none" stroke="#fff" stroke-width="3" stroke-linejoin="round" d="M24 2 45 13v22L24 46 3 35V13Zm0 23v21m0-21L3 13m21 12 21-12"/></svg>',
@@ -31,6 +69,7 @@ SVG_ICONS = {
     "check-circle": '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="m8 12 3 3 5-6"/></svg>',
     "trend-up": '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V5m-6 6 6-6 6 6"/></svg>',
     "trend-down": '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14m-6-6 6 6 6-6"/></svg>',
+    "message": '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 15a4 4 0 0 1-4 4H8l-5 3V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4Z"/><path d="M8 10h.01M12 10h.01M16 10h.01"/></svg>',
 }
 
 
@@ -110,6 +149,7 @@ def apply_style(st) -> None:
           --table-row: #ffffff;
           --field-bg: #ffffff;
           --button-bg: #ffffff;
+          --table-section-border: #000000;
           --card-shadow: 0 5px 18px rgba(0,20,90,.035);
         }
         body:has(#dashboard-theme[data-theme="dark"]) {
@@ -127,6 +167,7 @@ def apply_style(st) -> None:
           --table-row: #111d2e;
           --field-bg: #142238;
           --button-bg: #142238;
+          --table-section-border: #ffffff;
           --card-shadow: 0 7px 22px rgba(0,0,0,.24);
         }
         html, body, [class*="css"], .stApp, .stApp * {
@@ -356,6 +397,10 @@ def apply_style(st) -> None:
         .filter-card-label { color:var(--blue); font-size:12px; line-height:16px; font-weight:700; margin-bottom:6px; }
         [data-testid="stColumn"]:has(.project-filter-label) .stSelectbox { width:64%; }
         [data-testid="stColumn"]:has(.period-filter-label) .stDateInput { width:68%; }
+        [data-testid="stColumn"]:has(.period-filter-label) [data-testid="stForm"] .stDateInput {
+          width:100%;
+          min-width:0;
+        }
         [data-testid="stColumn"]:has(.filter-card-label) [data-baseweb="select"] > div,
         [data-testid="stColumn"]:has(.filter-card-label) [data-baseweb="input"] > div,
         [data-testid="stColumn"]:has(.filter-card-label) input {
@@ -366,11 +411,47 @@ def apply_style(st) -> None:
         }
         .stDateInput input {
           padding-right:40px !important;
-          background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%230528f7' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E") !important;
-          background-repeat:no-repeat !important;
-          background-position:right 12px center !important;
-          background-size:17px 17px !important;
         }
+        [data-testid="stDateInput"] { position:relative; overflow:visible !important; isolation:isolate; }
+        [data-testid="stDateInput"]:after {
+          content:"";
+          position:absolute;
+          right:0;
+          bottom:0;
+          z-index:50;
+          display:block;
+          width:40px;
+          height:40px;
+          pointer-events:none;
+          border-radius:0 5px 5px 0;
+          background:#f1f3f7 center / 18px 18px no-repeat url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2314263f' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m7 9 5 5 5-5'/%3E%3C/svg%3E");
+        }
+        [data-testid="stForm"]:has([data-testid="stDateInput"]) [data-testid="stFormSubmitButton"] {
+          padding-top:28px;
+        }
+        [data-testid="stForm"]:has([data-testid="stDateInput"]) [data-testid="stWidgetLabel"] p {
+          color:var(--blue) !important;
+          font-size:12px !important;
+          line-height:16px !important;
+          font-weight:600 !important;
+        }
+        [data-testid="stForm"]:has([data-testid="stDateInput"]) [data-testid="stFormSubmitButton"] button {
+          height:40px;
+          background:var(--button-bg) !important;
+          border:1px solid var(--border) !important;
+          color:var(--blue) !important;
+          font-size:14px !important;
+          line-height:18px !important;
+          font-weight:600 !important;
+          box-shadow:none !important;
+        }
+        [data-testid="stForm"]:has([data-testid="stDateInput"]) [data-testid="stFormSubmitButton"] button:hover,
+        [data-testid="stForm"]:has([data-testid="stDateInput"]) [data-testid="stFormSubmitButton"] button:focus-visible {
+          background:var(--surface-muted) !important;
+          border-color:var(--blue) !important;
+          color:var(--blue-strong) !important;
+        }
+        body:has(#dashboard-theme[data-theme="dark"]) [data-testid="stDateInput"]:after { background-color:#26354a; }
         .kpi-card {
           position: relative;
           height: clamp(140px, 15.48vh, 168px);
@@ -602,8 +683,17 @@ def apply_style(st) -> None:
         .campaign-table th,.campaign-table td { height:26px; padding:4px 6px; border-bottom:1px solid #e7edf6; text-align:center; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
         .campaign-table th { font-size:9px; font-weight:700; line-height:12px; color:var(--blue); background:#fff; }
         .campaign-table td { font-weight:500; }
-        .campaign-table th:nth-child(4),.campaign-table td:nth-child(4) { width:20%; text-align:left; }
+        .campaign-table th:nth-child(3),.campaign-table td:nth-child(3) { width:20%; text-align:left; }
         .campaign-table th:first-child,.campaign-table td:first-child { width:8%; text-align:left; }
+        .campaign-table th:last-child,.campaign-table td:last-child { width:16%; text-align:left; }
+        .campaign-table td:last-child { white-space:normal; overflow:visible; text-overflow:clip; }
+        .delta-value { font-weight:700; white-space:nowrap; }
+        .delta-good { color:#08a642; }
+        .delta-bad { color:#e11d2e; }
+        .delta-neutral { color:var(--text-secondary); }
+        .action-cell { display:flex; align-items:flex-start; gap:6px; min-width:0; color:var(--text-main); font-weight:600; line-height:14px; }
+        .action-cell .svg-icon { width:14px; height:14px; flex:0 0 auto; margin-top:1px; color:var(--blue); }
+        .action-text { display:-webkit-box; overflow:hidden; white-space:normal; -webkit-box-orient:vertical; -webkit-line-clamp:2; }
         .campaign-table tr:last-child td { border-bottom:0; }
         [data-testid="stAppDeployButton"] { display:none !important; }
         body:has(#dashboard-theme[data-theme="dark"]) .top-filter,
@@ -626,15 +716,65 @@ def apply_style(st) -> None:
         body:has(#dashboard-theme[data-theme="dark"]) .kpi-wallet .kpi-value,
         body:has(#dashboard-theme[data-theme="dark"]) .kpi-wallet .kpi-icon { color:#4f73ff; }
 
-        .kpi-card { display:flex; flex-direction:column; justify-content:flex-start; }
-        .kpi-value { margin:10px 0 6px; }
+        .campaign-table thead th {
+          background:#000 !important;
+          color:#fff !important;
+          border-top:1px solid #000 !important;
+          border-bottom:2px solid #000 !important;
+          border-right:1px solid #000 !important;
+        }
+        .campaign-table thead th:first-child,
+        .campaign-table tbody td:first-child { border-left:1px solid #000 !important; }
+        .campaign-table tbody td { border-right:1px solid #000 !important; }
+        .campaign-table tr:has(.subtotal-row-marker) td {
+          background:#dce6f1 !important;
+          color:#00145a !important;
+          font-weight:700 !important;
+          border-top:2px solid #000 !important;
+          border-bottom:2px solid #000 !important;
+        }
+        .campaign-table tr:has(.total-row-marker) td {
+          background:#000 !important;
+          color:#fff !important;
+          font-weight:700 !important;
+          border-top:2px solid #000 !important;
+          border-bottom:2px solid #000 !important;
+        }
+        .campaign-table tr:has(.subtotal-row-marker) .delta-value,
+        .campaign-table tr:has(.total-row-marker) .delta-value { color:inherit !important; }
+        .campaign-table th:nth-child(4),
+        .campaign-table td:nth-child(4),
+        .campaign-table th:nth-child(7),
+        .campaign-table td:nth-child(7),
+        .campaign-table th:nth-child(10),
+        .campaign-table td:nth-child(10) {
+          border-left:2px solid var(--table-section-border) !important;
+        }
+        body:has(#dashboard-theme[data-theme="dark"]) .campaign-table th:nth-child(4),
+        body:has(#dashboard-theme[data-theme="dark"]) .campaign-table td:nth-child(4),
+        body:has(#dashboard-theme[data-theme="dark"]) .campaign-table th:nth-child(7),
+        body:has(#dashboard-theme[data-theme="dark"]) .campaign-table td:nth-child(7),
+        body:has(#dashboard-theme[data-theme="dark"]) .campaign-table th:nth-child(10),
+        body:has(#dashboard-theme[data-theme="dark"]) .campaign-table td:nth-child(10) {
+          border-left-color:var(--table-section-border) !important;
+        }
+        .subtotal-row-marker,.total-row-marker { display:none; }
+
+        .kpi-card { display:flex; flex-direction:column; justify-content:flex-start; container-type:inline-size; }
+        .kpi-value { margin:10px 0 6px; white-space:nowrap; }
+        .kpi-wallet .kpi-value,.kpi-euro .kpi-value { font-size:25px; }
         .kpi-notes { min-height:43px; display:flex; flex-direction:column; justify-content:space-between; }
-        .kpi-note { display:flex; align-items:center; gap:6px; color:var(--text-secondary); }
+        .kpi-note { display:flex; align-items:center; gap:6px; color:var(--text-secondary); white-space:nowrap; }
         .kpi-note .svg-icon { width:15px; height:15px; flex:0 0 auto; stroke-width:2; }
         .kpi-note.primary { color:var(--accent); font-weight:700; }
         .kpi-note.secondary { color:var(--blue); font-weight:700; }
         .kpi-card.delta .kpi-notes { justify-content:flex-start; text-align:center; }
         .kpi-card.delta .kpi-note { justify-content:center; color:var(--orange); }
+        @container (max-width: 280px) {
+          .kpi-value { font-size:23px; line-height:25px; }
+          .kpi-note { font-size:10px; line-height:14px; gap:4px; }
+          .kpi-note .svg-icon { width:13px; height:13px; }
+        }
 
         .svg-gauge { position:relative; width:min(100%,270px); height:166px; margin:0 auto; }
         .svg-gauge svg { display:block; width:100%; height:132px; overflow:visible; }
@@ -645,8 +785,8 @@ def apply_style(st) -> None:
         .gauge-pin { stroke:var(--card-bg); stroke-width:2; }
         .lead-pin { fill:#19b6ef; }
         .cpl-pin { fill:#ff9d00; }
-        .svg-gauge-value { position:absolute; left:0; right:0; top:55px; text-align:center; color:var(--blue); font-size:31px; line-height:31px; font-weight:700; }
-        .svg-gauge-caption { position:absolute; left:0; right:0; top:91px; text-align:center; color:var(--blue); font-size:12px; line-height:16px; font-weight:700; }
+        .svg-gauge-value { position:absolute; left:0; right:0; top:67px; text-align:center; color:var(--blue); font-size:31px; line-height:31px; font-weight:700; }
+        .svg-gauge-caption { position:absolute; left:0; right:0; top:103px; text-align:center; color:var(--blue); font-size:12px; line-height:16px; font-weight:700; }
         .svg-gauge-target { position:absolute; left:0; right:0; top:145px; text-align:center; color:var(--blue); font-size:11px; line-height:14px; font-weight:700; }
 
         .cpl-gauge { position:relative; width:min(100%,310px); height:166px; margin:0 auto; }
@@ -811,11 +951,489 @@ def prepare_data(pd) -> "pd.DataFrame":
         "cpl_target",
         "cpl_effettivo",
         "delta_cpl",
+        "kpi_investimento_media_totale",
+        "kpi_stima_spending_progressiva_totale",
+        "kpi_speso_effettivo_totale",
+        "kpi_delta_speso_totale",
+        "kpi_delta_delivery_pct_totale",
+        "kpi_lead_effettive_totale",
+        "kpi_stima_lead_progressiva_totale",
+        "kpi_delta_lead_totale",
+        "kpi_cpl_effettivo_totale",
+        "kpi_cpl_target_totale",
+        "kpi_delta_cpl_totale",
     ]
+    numeric_columns.extend(
+        column
+        for column in df.columns
+        if column.startswith("kpi_") or column.startswith("subtotal_")
+    )
     for column in numeric_columns:
         if column in df.columns:
             df[column] = as_number(df[column])
+    if "campaign_name" in df.columns:
+        df = df[
+            ~df["campaign_name"].fillna("").astype(str).str.casefold().isin(
+                EXCLUDED_CAMPAIGN_NAMES
+            )
+        ].copy()
+    if "meta_campaign_id" in df.columns:
+        meta_ids = df["meta_campaign_id"].fillna("").astype(str).str.replace(
+            r"\.0$", "", regex=True
+        )
+        df = df[~meta_ids.isin(EXCLUDED_CAMPAIGN_IDS)].copy()
     return df
+
+
+def prepare_spend_daily(pd) -> "pd.DataFrame":
+    """Load the local API-only daily spend file."""
+    if not REPORT_DAILY_PATH.exists():
+        return pd.DataFrame(columns=["date", "source", "campaign_id", "campaign_name", "spend"])
+    daily = pd.read_csv(REPORT_DAILY_PATH, dtype={"campaign_id": "string"})
+    daily["date"] = pd.to_datetime(daily["date"], errors="coerce").dt.date
+    daily["spend"] = pd.to_numeric(daily["spend"], errors="coerce").fillna(0.0)
+    daily["campaign_id"] = daily["campaign_id"].fillna("").astype(str).str.strip()
+    excluded = (
+        daily["campaign_name"].fillna("").astype(str).str.casefold().isin(
+            EXCLUDED_CAMPAIGN_NAMES
+        )
+        | daily["campaign_id"].isin(EXCLUDED_CAMPAIGN_IDS)
+    )
+    return daily.loc[~excluded].dropna(subset=["date"])
+
+
+def add_unmapped_daily_campaigns(pd, report_df, daily_df):
+    """Add active API campaigns missing from the Sheet without inventing lead data."""
+    if daily_df.empty:
+        return report_df
+
+    def clean_id(value) -> str:
+        if pd.isna(value):
+            return ""
+        text = str(value).strip()
+        return text[:-2] if text.endswith(".0") else text
+
+    configured = {
+        "google_ads": {
+            clean_id(value) for value in report_df.get("google_campaign_id", [])
+            if clean_id(value)
+        },
+        "meta_ads": {
+            clean_id(value) for value in report_df.get("meta_campaign_id", [])
+            if clean_id(value)
+        },
+    }
+    totals = (
+        daily_df.groupby(["source", "campaign_id", "campaign_name"], dropna=False)["spend"]
+        .sum()
+        .reset_index()
+    )
+    additions = []
+    for row in totals.itertuples(index=False):
+        if (
+            float(row.spend or 0) <= 0
+            or row.campaign_id in configured.get(row.source, set())
+            or row.campaign_id in EXCLUDED_CAMPAIGN_IDS
+            or str(row.campaign_name or "").casefold() in EXCLUDED_CAMPAIGN_NAMES
+        ):
+            continue
+        new_row = {column: None for column in report_df.columns}
+        new_row.update(
+            {
+                "funnel": "API Ads",
+                "platform": "Google" if row.source == "google_ads" else "Meta",
+                "channel": "API",
+                "campaign_name": row.campaign_name,
+                "google_campaign_id": row.campaign_id if row.source == "google_ads" else None,
+                "meta_campaign_id": row.campaign_id if row.source == "meta_ads" else None,
+                "source_status": f"{row.source}:daily_only",
+            }
+        )
+        additions.append(new_row)
+    if not additions:
+        return report_df
+    return pd.concat([report_df, pd.DataFrame(additions)], ignore_index=True)
+
+
+def load_spend_daily_status() -> dict:
+    if not REPORT_DAILY_STATUS_PATH.exists():
+        return {}
+    try:
+        with REPORT_DAILY_STATUS_PATH.open("r", encoding="utf-8") as stream:
+            return json.load(stream)
+    except (OSError, json.JSONDecodeError):
+        return {}
+
+
+def normalize_period(selected_period, fallback_start, fallback_end):
+    if isinstance(selected_period, (tuple, list)):
+        if len(selected_period) == 2:
+            start, end = selected_period
+        elif len(selected_period) == 1:
+            start = end = selected_period[0]
+        else:
+            start, end = fallback_start, fallback_end
+    else:
+        start = end = selected_period or fallback_end
+    if start > end:
+        raise ValueError("La data iniziale non può essere successiva alla data finale.")
+    if (start.year, start.month) != (end.year, end.month):
+        raise ValueError("Data iniziale e data finale devono appartenere allo stesso mese.")
+    return start, end
+
+
+def apply_daily_spend_filter(pd, report_df, daily_df, start_date, end_date):
+    """Replace Ads spend/plan fields only; all lead and CPL fields stay untouched."""
+    from calendar import monthrange
+    import re
+
+    if daily_df.empty:
+        return report_df.copy()
+    filtered_daily = daily_df[
+        (daily_df["date"] >= start_date) & (daily_df["date"] <= end_date)
+    ].copy()
+    totals = filtered_daily.groupby(["source", "campaign_id"], dropna=False)["spend"].sum()
+    result = report_df.copy()
+    selected_days = (end_date - start_date).days + 1
+    days_in_month = monthrange(start_date.year, start_date.month)[1]
+
+    def clean_id(value) -> str:
+        if pd.isna(value):
+            return ""
+        text = str(value).strip()
+        return text[:-2] if text.endswith(".0") else text
+
+    dynamic_values: dict[int, float | None] = {}
+    for index, row in result.iterrows():
+        platform = str(row.get("platform") or "").casefold()
+        if "google" in platform:
+            key = ("google_ads", clean_id(row.get("google_campaign_id")))
+        elif "meta" in platform:
+            key = ("meta_ads", clean_id(row.get("meta_campaign_id")))
+        else:
+            dynamic_values[index] = row.get("speso_effettivo")
+            continue
+        dynamic_values[index] = float(totals.get(key, 0.0)) if key[1] else 0.0
+
+    # Preserve the existing continuation-row rollup used by report_data.csv.
+    excel_row_to_index = {
+        clean_id(row.get("excel_row")): index for index, row in result.iterrows()
+    }
+    for index, row in result.iterrows():
+        match = re.search(r"rolled_up_to_excel_row_(\d+)", str(row.get("source_status") or ""))
+        if not match:
+            continue
+        parent_index = excel_row_to_index.get(match.group(1))
+        if parent_index is not None:
+            dynamic_values[parent_index] = float(dynamic_values.get(parent_index) or 0) + float(dynamic_values.get(index) or 0)
+        dynamic_values[index] = None
+
+    result["speso_effettivo"] = pd.Series(dynamic_values)
+    if "investimento_media" in result:
+        result["stima_spending_progressiva"] = (
+            pd.to_numeric(result["investimento_media"], errors="coerce")
+            / days_in_month
+            * selected_days
+        )
+    result["delta_speso"] = result["speso_effettivo"] - result["stima_spending_progressiva"]
+    result["delta_delivery_pct"] = result["delta_speso"] / result["stima_spending_progressiva"].replace(0, pd.NA)
+    _update_dynamic_spend_summaries(pd, result)
+    return result
+
+
+def _update_dynamic_spend_summaries(pd, frame) -> None:
+    """Align official Excel spending totals/subtotals with the selected period."""
+    from src.report_groups import CLIENT_GROUPS, client_subtotal_group
+
+    def summary_values(group):
+        planned = pd.to_numeric(
+            group.get("stima_spending_progressiva"), errors="coerce"
+        )
+        spent = pd.to_numeric(group.get("speso_effettivo"), errors="coerce")
+        planned_total = (
+            None if planned is None or not planned.notna().any()
+            else float(planned.sum(min_count=1))
+        )
+        spent_total = (
+            None if spent is None or not spent.notna().any()
+            else float(spent.sum(min_count=1))
+        )
+        delta = (
+            spent_total - planned_total
+            if spent_total is not None and planned_total is not None else None
+        )
+        delivery = (
+            delta / planned_total
+            if delta is not None and planned_total not in (None, 0) else None
+        )
+        return {
+            "stima_spending_progressiva": planned_total,
+            "speso_effettivo": spent_total,
+            "delta_speso": delta,
+            "delta_delivery_pct": delivery,
+        }
+
+    total = summary_values(frame)
+    for field, value in total.items():
+        frame[f"kpi_{field}_totale"] = value
+
+    group_labels = frame.apply(
+        lambda row: client_subtotal_group(row.to_dict()), axis=1
+    )
+    for slug, _label in CLIENT_GROUPS:
+        subtotal = summary_values(frame[group_labels == slug])
+        for field, value in subtotal.items():
+            frame[f"subtotal_{slug}_{field}"] = value
+
+
+def prepare_excel_export_frame(
+    pd, report_df, daily_df, metadata: dict, selected_start, selected_end
+):
+    """Create the all-campaign DataFrame represented by the selected date range."""
+    if daily_df.empty:
+        report_start = pd.to_datetime(metadata.get("start_date"), errors="coerce")
+        report_end = pd.to_datetime(metadata.get("end_date"), errors="coerce")
+        selected_is_report_period = (
+            not pd.isna(report_start)
+            and not pd.isna(report_end)
+            and selected_start == report_start.date()
+            and selected_end == report_end.date()
+        )
+        if not selected_is_report_period:
+            raise ValueError(
+                "I dati giornalieri di spesa non sono disponibili per il periodo selezionato."
+            )
+
+    export_df = apply_daily_spend_filter(
+        pd, report_df, daily_df, selected_start, selected_end
+    )
+    export_metadata = dict(metadata)
+    export_metadata["start_date"] = selected_start.isoformat()
+    export_metadata["end_date"] = selected_end.isoformat()
+    export_df["start_date"] = selected_start.isoformat()
+    export_df["end_date"] = selected_end.isoformat()
+    export_df.attrs["metadata"] = export_metadata
+    return export_df
+
+
+def build_excel_download(
+    pd, report_df, daily_df, metadata: dict, selected_start, selected_end
+) -> tuple[bytes, str]:
+    """Generate an XLSX snapshot for the current dates without replacing latest."""
+    from src.update_excel import generate_client_excel
+
+    export_df = prepare_excel_export_frame(
+        pd, report_df, daily_df, metadata, selected_start, selected_end
+    )
+    with TemporaryDirectory(prefix="dynamica_excel_") as output_dir:
+        generated_path = Path(
+            generate_client_excel(export_df, output_dir=output_dir)
+        )
+        content = generated_path.read_bytes()
+    filename = (
+        f"Report_Dynamica_{selected_start:%Y-%m-%d}_{selected_end:%Y-%m-%d}.xlsx"
+    )
+    return content, filename
+
+
+def _dashboard_numeric_series(pd, frame, column: str):
+    if column not in frame.columns:
+        return pd.Series(dtype="float64")
+    return pd.to_numeric(frame[column], errors="coerce").dropna()
+
+
+def _dashboard_aggregate_summary(pd, static_frame, dynamic_frame) -> dict:
+    """Aggregate only the rows currently represented by dashboard filters."""
+    def total(frame, column: str):
+        values = _dashboard_numeric_series(pd, frame, column)
+        return None if values.empty else float(values.sum())
+
+    lead_plan = total(static_frame, "stima_lead_progressiva")
+    leads = total(static_frame, "lead_effettive")
+    delta_lead = total(static_frame, "delta_lead")
+    planned_spend = total(dynamic_frame, "stima_spending_progressiva")
+    spent = total(dynamic_frame, "speso_effettivo")
+    delta_spend = (
+        spent - planned_spend
+        if spent is not None and planned_spend is not None else None
+    )
+    cpl_targets = _dashboard_numeric_series(pd, static_frame, "cpl_target")
+    cpl_target = None if cpl_targets.empty else float(cpl_targets.mean())
+    static_spend = total(static_frame, "speso_effettivo")
+    cpl_effective = (
+        static_spend / leads
+        if static_spend is not None and leads not in (None, 0) else None
+    )
+    delta_cpl = (
+        cpl_effective - cpl_target
+        if cpl_effective is not None and cpl_target is not None else None
+    )
+    return {
+        "stima_lead_progressiva": lead_plan,
+        "lead_effettive": leads,
+        "delta_lead": delta_lead,
+        "stima_spending_progressiva": planned_spend,
+        "speso_effettivo": spent,
+        "delta_speso": delta_spend,
+        "cpl_target": cpl_target,
+        "cpl_effettivo": cpl_effective,
+        "delta_cpl": delta_cpl,
+    }
+
+
+def _dashboard_official_summary(
+    pd, frame, fallback: dict, *, slug: str | None = None
+) -> dict:
+    values = {}
+    for field in DASHBOARD_SUMMARY_FIELDS:
+        column = (
+            f"kpi_{field}_totale"
+            if slug is None else f"subtotal_{slug}_{field}"
+        )
+        official = _dashboard_numeric_series(pd, frame, column)
+        values[field] = (
+            fallback.get(field) if official.empty else float(official.iloc[0])
+        )
+    return values
+
+
+def build_dashboard_table_frame(
+    pd,
+    static_frame,
+    dynamic_frame,
+    all_frame,
+    *,
+    full_scope: bool,
+):
+    """Insert Excel-style subtotals and a final total into filtered table rows."""
+    from src.report_groups import CLIENT_GROUPS, client_subtotal_group
+
+    if dynamic_frame.empty:
+        return pd.DataFrame(columns=[*DASHBOARD_TABLE_COLUMNS, "_row_type"])
+
+    dynamic_groups = dynamic_frame.apply(
+        lambda row: client_subtotal_group(row.to_dict()), axis=1
+    )
+    all_groups = all_frame.apply(
+        lambda row: client_subtotal_group(row.to_dict()), axis=1
+    )
+    output_rows: list[dict] = []
+    group_summaries: list[tuple[dict, bool]] = []
+
+    for slug, label in CLIENT_GROUPS:
+        group = dynamic_frame[dynamic_groups == slug]
+        if group.empty:
+            continue
+        static_group = static_frame.reindex(group.index)
+        fallback = _dashboard_aggregate_summary(pd, static_group, group)
+        complete_group = set(group.index) == set(all_frame[all_groups == slug].index)
+        summary = (
+            _dashboard_official_summary(pd, group, fallback, slug=slug)
+            if full_scope or complete_group else fallback
+        )
+
+        for _, campaign in group.iterrows():
+            campaign_row = campaign.to_dict()
+            campaign_row["_row_type"] = "campaign"
+            output_rows.append(campaign_row)
+
+        subtotal_row = {column: None for column in DASHBOARD_TABLE_COLUMNS}
+        subtotal_row.update(summary)
+        subtotal_row["funnel"] = f"TOT {label}"
+        subtotal_row["_row_type"] = "subtotal"
+        output_rows.append(subtotal_row)
+        group_summaries.append((summary, complete_group))
+
+    total_fallback = _dashboard_aggregate_summary(pd, static_frame, dynamic_frame)
+    if full_scope:
+        total_summary = _dashboard_official_summary(
+            pd, dynamic_frame, total_fallback
+        )
+    elif len(group_summaries) == 1 and group_summaries[0][1]:
+        total_summary = dict(group_summaries[0][0])
+    else:
+        total_summary = total_fallback
+    total_row = {column: None for column in DASHBOARD_TABLE_COLUMNS}
+    total_row.update(total_summary)
+    total_row["funnel"] = "TOTALE GENERALE"
+    total_row["_row_type"] = "total"
+    output_rows.append(total_row)
+    return pd.DataFrame(output_rows)
+
+
+def build_csv_download(
+    report_df, selected_start, selected_end
+) -> tuple[bytes, str]:
+    """Serialize the currently filtered report snapshot for the selected period."""
+    export_df = report_df.copy()
+    export_df["start_date"] = selected_start.isoformat()
+    export_df["end_date"] = selected_end.isoformat()
+    content = export_df.to_csv(index=False, encoding="utf-8-sig").encode("utf-8-sig")
+    filename = f"report_data_{selected_start:%Y-%m-%d}_{selected_end:%Y-%m-%d}.csv"
+    return content, filename
+
+
+def calculate_dashboard_metrics(df, use_official_totals: bool = False) -> dict:
+    """Calculate KPI values without altering campaign-level table data."""
+    def first_total(column: str):
+        if column not in df.columns:
+            return None
+        values = df[column].dropna()
+        return None if values.empty else float(values.iloc[0])
+
+    spend_available = df["speso_effettivo"].notna().any()
+    spend_total = df["speso_effettivo"].sum(skipna=True) if spend_available else None
+    budget_total = df["investimento_media"].sum(skipna=True)
+    planned_spend = df["stima_spending_progressiva"].sum(skipna=True)
+    lead_available = df["lead_effettive"].notna().any()
+    lead_total = df["lead_effettive"].sum(skipna=True)
+    lead_target = df["stima_lead_progressiva"].sum(skipna=True)
+    cpl_target_avg = df["cpl_target"].mean(skipna=True)
+    official_delta_spend = None
+    official_delivery_delta = None
+    official_cpl = None
+
+    if use_official_totals:
+        official_spend = first_total("kpi_speso_effettivo_totale")
+        official_budget = first_total("kpi_investimento_media_totale")
+        official_plan = first_total("kpi_stima_spending_progressiva_totale")
+        official_leads = first_total("kpi_lead_effettive_totale")
+        official_lead_target = first_total("kpi_stima_lead_progressiva_totale")
+        official_cpl_target = first_total("kpi_cpl_target_totale")
+        official_delta_spend = first_total("kpi_delta_speso_totale")
+        official_delivery_delta = first_total("kpi_delta_delivery_pct_totale")
+        official_cpl = first_total("kpi_cpl_effettivo_totale")
+        spend_total = spend_total if official_spend is None else official_spend
+        budget_total = budget_total if official_budget is None else official_budget
+        planned_spend = planned_spend if official_plan is None else official_plan
+        lead_total = lead_total if official_leads is None else official_leads
+        lead_target = lead_target if official_lead_target is None else official_lead_target
+        cpl_target_avg = cpl_target_avg if official_cpl_target is None else official_cpl_target
+        lead_available = lead_total is not None
+
+    delta_spend = spend_total - planned_spend if spend_total is not None else None
+    delivery_ratio = ratio(spend_total, planned_spend) if spend_total is not None else None
+    lead_ratio = ratio(lead_total, lead_target) if lead_available else None
+    cpl_avg = ratio(spend_total, lead_total) if lead_available and spend_total is not None else None
+    if official_delta_spend is not None:
+        delta_spend = official_delta_spend
+    if official_delivery_delta is not None:
+        delivery_ratio = 1 + official_delivery_delta
+    if official_cpl is not None:
+        cpl_avg = official_cpl
+    return {
+        "spend_total": spend_total,
+        "budget_total": budget_total,
+        "planned_spend": planned_spend,
+        "delta_spend": delta_spend,
+        "delivery_ratio": delivery_ratio,
+        "lead_available": lead_available,
+        "lead_total": lead_total,
+        "lead_target": lead_target,
+        "lead_ratio": lead_ratio,
+        "cpl_avg": cpl_avg,
+        "cpl_target_avg": cpl_target_avg,
+    }
 
 
 def local_verification_enabled() -> bool:
@@ -829,7 +1447,9 @@ def local_verification_enabled() -> bool:
     return os.getenv("LOCAL_VERIFICATION_MODE", "false").strip().lower() == "true"
 
 
-def render_local_ads_verification(st, pd, metadata: dict) -> None:
+def render_local_ads_verification(
+    st, pd, metadata: dict, selected_start=None, selected_end=None
+) -> None:
     """Render real read-only API checks only when explicitly enabled locally."""
     if not local_verification_enabled():
         return
@@ -838,8 +1458,8 @@ def render_local_ads_verification(st, pd, metadata: dict) -> None:
     from src.dates import current_month_until_yesterday
 
     fallback_start, fallback_end = current_month_until_yesterday()
-    start_date = str(metadata.get("start_date") or fallback_start.isoformat())
-    end_date = str(metadata.get("end_date") or fallback_end.isoformat())
+    start_date = str(selected_start or metadata.get("start_date") or fallback_start.isoformat())
+    end_date = str(selected_end or metadata.get("end_date") or fallback_end.isoformat())
 
     with st.expander("Verifica locale collegamenti Ads", expanded=False):
         st.caption(
@@ -895,6 +1515,9 @@ def main() -> None:
 
     metadata = load_last_update()
     df = prepare_data(pd)
+    daily_spend = prepare_spend_daily(pd)
+    daily_status = load_spend_daily_status()
+    df = add_unmapped_daily_campaigns(pd, df, daily_spend)
 
     if df.empty:
         st.error("Dati dashboard non disponibili.")
@@ -918,15 +1541,23 @@ def main() -> None:
     project_options = ["Tutti i progetti"] + sorted(
         str(value) for value in df["campaign_name"].dropna().unique()
     )
-    available_start = pd.to_datetime(start_date).date()
-    available_end = pd.to_datetime(end_date).date()
+    yesterday = date.today() - timedelta(days=1)
+    if daily_spend.empty:
+        available_start = pd.to_datetime(start_date).date()
+        available_end = min(pd.to_datetime(end_date).date(), yesterday)
+    else:
+        available_start = min(daily_spend["date"])
+        available_end = min(max(daily_spend["date"]), yesterday)
+    default_start = max(available_start, available_end.replace(day=1))
+    st.session_state.setdefault("applied_start_date", default_start)
+    st.session_state.setdefault("applied_end_date", available_end)
     with top_left:
         st.markdown(
-            '<div class="filter-card-label project-filter-label">Cliente / Progetto</div>',
+            '<div class="filter-card-label project-filter-label">Progetto</div>',
             unsafe_allow_html=True,
         )
         selected_project = st.selectbox(
-            "Cliente / Progetto",
+            "Progetto",
             project_options,
             label_visibility="collapsed",
             key="project_filter",
@@ -936,36 +1567,69 @@ def main() -> None:
             '<div class="filter-card-label period-filter-label">Periodo</div>',
             unsafe_allow_html=True,
         )
-        selected_period = st.date_input(
-            "Periodo",
-            value=(available_start, available_end),
-            min_value=available_start,
-            max_value=available_end,
-            format="DD/MM/YYYY",
-            label_visibility="collapsed",
-            key="period_filter",
-        )
+        with st.form("period_filter_form", border=False):
+            start_col, end_col, apply_col = st.columns([1, 1, .72], gap="small")
+            with start_col:
+                start_date = st.date_input(
+                    "Data inizio",
+                    value=st.session_state["applied_start_date"],
+                    min_value=available_start,
+                    max_value=available_end,
+                    format="DD/MM/YYYY",
+                    key="start_date",
+                )
+            with end_col:
+                end_date = st.date_input(
+                    "Data fine",
+                    value=st.session_state["applied_end_date"],
+                    min_value=available_start,
+                    max_value=available_end,
+                    format="DD/MM/YYYY",
+                    key="end_date",
+                )
+            with apply_col:
+                apply_period = st.form_submit_button(
+                    "Applica periodo", width="stretch"
+                )
 
     if selected_project != "Tutti i progetti":
         filtered = filtered[filtered["campaign_name"].astype(str) == selected_project]
-    selected_end = (
-        selected_period[-1]
-        if isinstance(selected_period, (tuple, list)) and selected_period
-        else selected_period or available_end
-    )
+    if apply_period:
+        try:
+            selected_start, selected_end = normalize_period(
+                (start_date, end_date), default_start, available_end
+            )
+        except ValueError as exc:
+            st.error(str(exc))
+            return
+        st.session_state["applied_start_date"] = selected_start
+        st.session_state["applied_end_date"] = selected_end
+    selected_start = st.session_state["applied_start_date"]
+    selected_end = st.session_state["applied_end_date"]
 
-    spend_available = filtered["speso_effettivo"].notna().any()
-    spend_total = filtered["speso_effettivo"].sum(skipna=True) if spend_available else None
-    budget_total = filtered["investimento_media"].sum(skipna=True)
-    planned_spend = filtered["stima_spending_progressiva"].sum(skipna=True)
-    delta_spend = spend_total - planned_spend if spend_total is not None else None
-    delivery_ratio = ratio(spend_total, planned_spend) if spend_total is not None else None
-    lead_available = filtered["lead_effettive"].notna().any()
-    lead_total = filtered["lead_effettive"].sum(skipna=True)
-    lead_target = filtered["stima_lead_progressiva"].sum(skipna=True)
-    lead_ratio = ratio(lead_total, lead_target) if lead_available else None
-    cpl_avg = ratio(spend_total, lead_total) if lead_available and spend_total is not None else None
-    cpl_target_avg = filtered["cpl_target"].mean(skipna=True)
+    full_scope = (
+        selected_project == "Tutti i progetti"
+        and len(filtered.index) == len(df.index)
+    )
+    lead_metrics = calculate_dashboard_metrics(filtered, use_official_totals=full_scope)
+    dynamic_filtered = apply_daily_spend_filter(
+        pd, filtered, daily_spend, selected_start, selected_end
+    )
+    spend_metrics = calculate_dashboard_metrics(dynamic_filtered, use_official_totals=False)
+    metrics = lead_metrics.copy()
+    for key in ("spend_total", "planned_spend", "delta_spend", "delivery_ratio"):
+        metrics[key] = spend_metrics[key]
+    spend_total = metrics["spend_total"]
+    budget_total = metrics["budget_total"]
+    planned_spend = metrics["planned_spend"]
+    delta_spend = metrics["delta_spend"]
+    delivery_ratio = metrics["delivery_ratio"]
+    lead_available = metrics["lead_available"]
+    lead_total = metrics["lead_total"]
+    lead_target = metrics["lead_target"]
+    lead_ratio = metrics["lead_ratio"]
+    cpl_avg = metrics["cpl_avg"]
+    cpl_target_avg = metrics["cpl_target_avg"]
     short_end = selected_end.strftime("%d/%m")
 
     spend_vs_plan = delivery_ratio - 1 if delivery_ratio is not None else None
@@ -1008,23 +1672,25 @@ def main() -> None:
             f"CPL target medio: {money(cpl_target_avg).replace(' EUR', ' €')}", "#ff7a00", "trend-up", "target"
         )
 
-    delivery_width = min(max((delivery_ratio or 0) * 100, 0), 120)
-    lead_width = min(max((lead_ratio or 0) * 100, 0), 120)
+    delivery_width = min(max(delivery_ratio or 0, 0), 1.2) / 1.2 * 100
+    lead_width = min(max(lead_ratio or 0, 0), 1.2) / 1.2 * 100
     cpl_efficiency = None
     if cpl_avg is not None and cpl_target_avg and not math.isnan(cpl_target_avg):
         cpl_efficiency = (cpl_avg / cpl_target_avg) - 1
 
     lead_fraction = min(max(lead_ratio if lead_ratio is not None else 1, 0), 1)
     lead_progress = lead_fraction * 100
-    lead_needle_angle = math.radians(90 + lead_fraction * 80)
-    lead_needle_x = 196 + 36 * math.cos(lead_needle_angle)
-    lead_needle_y = 105 - 36 * math.sin(lead_needle_angle)
-    lead_perp_x = math.sin(lead_needle_angle) * 4
-    lead_perp_y = math.cos(lead_needle_angle) * 4
-    lead_base_1_x = lead_needle_x + lead_perp_x
-    lead_base_1_y = lead_needle_y + lead_perp_y
-    lead_base_2_x = lead_needle_x - lead_perp_x
-    lead_base_2_y = lead_needle_y - lead_perp_y
+    lead_needle_angle = math.pi * (1 - lead_fraction)
+    lead_needle_x = 110 + 82 * math.cos(lead_needle_angle)
+    lead_needle_y = 105 - 82 * math.sin(lead_needle_angle)
+    lead_base_x = 110 + 58 * math.cos(lead_needle_angle)
+    lead_base_y = 105 - 58 * math.sin(lead_needle_angle)
+    lead_perp_x = math.sin(lead_needle_angle) * 5
+    lead_perp_y = math.cos(lead_needle_angle) * 5
+    lead_base_1_x = lead_base_x + lead_perp_x
+    lead_base_1_y = lead_base_y + lead_perp_y
+    lead_base_2_x = lead_base_x - lead_perp_x
+    lead_base_2_y = lead_base_y - lead_perp_y
     lead_progress_path = "<!-- progress unavailable -->"
     if lead_ratio is not None and lead_progress > 0:
         lead_progress_path = (
@@ -1033,7 +1699,12 @@ def main() -> None:
         )
 
     efficiency_for_needle = min(max(cpl_efficiency or 0, -0.2), 0.2)
-    efficiency_fraction = (efficiency_for_needle + 0.2) / 0.4
+    if efficiency_for_needle < -0.05:
+        efficiency_fraction = ((efficiency_for_needle + 0.2) / 0.15) / 3
+    elif efficiency_for_needle <= 0.05:
+        efficiency_fraction = 1 / 3 + ((efficiency_for_needle + 0.05) / 0.10) / 3
+    else:
+        efficiency_fraction = 2 / 3 + ((efficiency_for_needle - 0.05) / 0.15) / 3
     efficiency_angle = math.radians(180 - efficiency_fraction * 180)
     efficiency_needle_x = 110 + 58 * math.cos(efficiency_angle)
     efficiency_needle_y = 105 - 58 * math.sin(efficiency_angle)
@@ -1062,7 +1733,7 @@ def main() -> None:
                 <svg viewBox="0 0 220 125" aria-hidden="true">
                   <path class="gauge-track" pathLength="100" d="M20 105 A90 90 0 0 1 200 105"/>
                   {lead_progress_path}
-                  <path class="gauge-needle-shape" d="M{lead_base_1_x:.1f} {lead_base_1_y:.1f} L{lead_base_2_x:.1f} {lead_base_2_y:.1f} L196 105 Z"/>
+                  <path class="gauge-needle-shape" d="M{lead_base_1_x:.1f} {lead_base_1_y:.1f} L{lead_base_2_x:.1f} {lead_base_2_y:.1f} L{lead_needle_x:.1f} {lead_needle_y:.1f} Z"/>
                 </svg>
                 <div class="svg-gauge-value">{percent(lead_ratio) if lead_ratio is not None else '—'}</div>
                 <div class="svg-gauge-caption">vs stima lead</div>
@@ -1100,7 +1771,7 @@ def main() -> None:
                   <path class="cpl-arc" stroke="#08a642" d="M20 105 A90 90 0 0 1 65 27.1"/>
                   <path class="cpl-arc" stroke="#ff9d00" d="M65 27.1 A90 90 0 0 1 155 27.1"/>
                   <path class="cpl-arc" stroke="#f20d18" d="M155 27.1 A90 90 0 0 1 200 105"/>
-                  <g transform="translate(0 -10)">
+                  <g transform="translate(0 -18)">
                     <path class="gauge-needle-shape" d="M{efficiency_base_1_x:.1f} {efficiency_base_1_y:.1f} L{efficiency_base_2_x:.1f} {efficiency_base_2_y:.1f} L{efficiency_needle_x:.1f} {efficiency_needle_y:.1f} Z"/>
                     <circle class="gauge-pin cpl-pin" cx="110" cy="105" r="7"/>
                   </g>
@@ -1113,59 +1784,125 @@ def main() -> None:
             unsafe_allow_html=True,
         )
 
-    table_columns = {
-        "funnel": "Funnel",
-        "platform": "Platform",
-        "channel": "Canale",
-        "campaign_name": "Campagna",
-        "investimento_media": "Investimento Media",
-        "stima_lead_progressiva": "Stima Lead",
-        "lead_effettive": "Lead Effettive",
-        "delta_lead": "Delta Lead",
-        "stima_spending_progressiva": "Stima Spending",
-        "speso_effettivo": "Speso Effettivo",
-        "delta_speso": "Delta Speso",
-        "cpl_target": "CPL Target",
-        "cpl_effettivo": "CPL Effettivo",
-        "delta_cpl": "Delta CPL",
-        "action": "Action",
-    }
-    display_df = filtered[[column for column in table_columns if column in filtered.columns]].rename(columns=table_columns)
+    table_frame = build_dashboard_table_frame(
+        pd,
+        filtered,
+        dynamic_filtered,
+        df,
+        full_scope=full_scope,
+    )
+    row_types = table_frame.pop("_row_type")
+    display_df = table_frame[
+        [column for column in DASHBOARD_TABLE_COLUMNS if column in table_frame.columns]
+    ].rename(columns=DASHBOARD_TABLE_COLUMNS)
 
-    for column in ["Stima Lead", "Lead Effettive", "Delta Lead"]:
+    for column in ["Stima Lead", "Lead Effettive"]:
         if column in display_df:
             display_df[column] = display_df[column].map(integer)
     for column in [
-        "Investimento Media",
         "Stima Spending",
         "Speso Effettivo",
-        "Delta Speso",
         "CPL Target",
         "CPL Effettivo",
-        "Delta CPL",
     ]:
         if column in display_df:
             display_df[column] = display_df[column].map(money)
+
+    def format_delta(value, *, negative_is_good: bool, formatter) -> str:
+        if pd.isna(value):
+            return '<span class="delta-value delta-neutral">—</span>'
+        numeric_value = float(value)
+        if numeric_value == 0:
+            css_class = "delta-neutral"
+        elif (numeric_value < 0) == negative_is_good:
+            css_class = "delta-good"
+        else:
+            css_class = "delta-bad"
+        formatted = formatter(numeric_value)
+        if numeric_value > 0:
+            formatted = f"+{formatted}"
+        return f'<span class="delta-value {css_class}">{formatted}</span>'
+
+    if "Delta Lead" in display_df:
+        display_df["Delta Lead"] = display_df["Delta Lead"].map(
+            lambda value: format_delta(value, negative_is_good=False, formatter=integer)
+        )
+    for column in ["Delta Speso", "Delta CPL"]:
+        if column in display_df:
+            display_df[column] = display_df[column].map(
+                lambda value: format_delta(value, negative_is_good=True, formatter=money)
+            )
+
+    if "Action" in display_df:
+        action_icon = svg_icon("message")
+
+        def format_action(value) -> str:
+            if pd.isna(value) or not str(value).strip():
+                return '<span class="delta-neutral">—</span>'
+            action = html.escape(str(value).strip())
+            return f'<div class="action-cell" title="{action}">{action_icon}<span class="action-text">{action}</span></div>'
+
+        display_df["Action"] = [
+            format_action(value) if row_types.iloc[index] == "campaign" else ""
+            for index, value in enumerate(display_df["Action"])
+        ]
+
+    for column in ("Canale", "Campagna"):
+        if column in display_df:
+            display_df[column] = display_df[column].fillna("")
+
+    if "Funnel" in display_df:
+        for index, row_type in row_types.items():
+            if row_type not in {"subtotal", "total"}:
+                continue
+            marker = (
+                "subtotal-row-marker" if row_type == "subtotal" else "total-row-marker"
+            )
+            label = html.escape(str(display_df.at[index, "Funnel"] or ""))
+            display_df.at[index, "Funnel"] = (
+                f'<span class="{marker}" aria-hidden="true"></span>{label}'
+            )
 
     table_header, download_col = st.columns([1, .215])
     with table_header:
         st.markdown('<div class="table-title"></div>', unsafe_allow_html=True)
     with download_col:
-        st.download_button(
-            "Scarica il report completo",
-            DATA_PATH.read_bytes(),
-            file_name="report_data.csv",
-            mime="text/csv",
-            width="stretch",
-        )
+        try:
+            excel_bytes, excel_filename = build_excel_download(
+                pd,
+                df,
+                daily_spend,
+                metadata,
+                selected_start,
+                selected_end,
+            )
+            st.download_button(
+                "Scarica il report completo",
+                excel_bytes,
+                file_name=excel_filename,
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                width="stretch",
+            )
+            csv_bytes, csv_filename = build_csv_download(
+                dynamic_filtered, selected_start, selected_end
+            )
+            st.download_button(
+                "Scarica CSV dati",
+                csv_bytes,
+                file_name=csv_filename,
+                mime="text/csv",
+                width="stretch",
+            )
+        except Exception:
+            st.error("I file di esportazione non sono momentaneamente disponibili.")
 
-    table_html = display_df.to_html(index=False, classes="campaign-table", border=0)
+    table_html = display_df.to_html(index=False, classes="campaign-table", border=0, escape=False)
     st.markdown(
         f'<div class="campaign-table-wrap">{table_html}</div>',
         unsafe_allow_html=True,
     )
 
-    render_local_ads_verification(st, pd, metadata)
+    render_local_ads_verification(st, pd, metadata, selected_start, selected_end)
 
 
 if __name__ == "__main__":

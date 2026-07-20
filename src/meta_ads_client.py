@@ -127,3 +127,39 @@ def fetch_meta_campaign_delivery(start_date: str, end_date: str) -> list[dict]:
         }
         for row in raw_rows
     ]
+
+
+def fetch_meta_campaign_daily_spend(start_date: str, end_date: str) -> list[dict]:
+    """Return one read-only spend row per campaign and date."""
+    load_dotenv(ENV_PATH, encoding="utf-8-sig")
+    access_token = os.getenv("META_ACCESS_TOKEN", "").strip()
+    ad_account_id = _normalize_ad_account_id(os.getenv("META_AD_ACCOUNT_ID"))
+    api_version = os.getenv("META_API_VERSION", "v25.0").strip() or "v25.0"
+    if not access_token:
+        raise MetaAdsDeliveryError("Configurazione Meta Ads incompleta: META_ACCESS_TOKEN")
+    if not ad_account_id:
+        raise MetaAdsDeliveryError("Configurazione Meta Ads incompleta: META_AD_ACCOUNT_ID")
+
+    raw_rows = _read_all(
+        f"{api_version}/act_{ad_account_id}/insights",
+        {
+            "access_token": access_token,
+            "level": "campaign",
+            "time_range": json.dumps(
+                {"since": start_date, "until": end_date}, separators=(",", ":")
+            ),
+            "time_increment": 1,
+            "fields": "date_start,campaign_id,campaign_name,spend",
+            "limit": 500,
+        },
+    )
+    return [
+        {
+            "date": str(row.get("date_start") or ""),
+            "platform": "Meta Ads",
+            "campaign_id": str(row.get("campaign_id") or ""),
+            "campaign_name": str(row.get("campaign_name") or "(senza nome campagna)"),
+            "spend": float(row.get("spend") or 0),
+        }
+        for row in raw_rows
+    ]

@@ -8,6 +8,7 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 from google.ads.googleads.client import GoogleAdsClient
+import yaml
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -43,10 +44,29 @@ def _read_oauth_client(path_value: str) -> tuple[str, str]:
     return client_id, client_secret
 
 
+def _read_yaml_config(path_value: str | None) -> dict:
+    """Read local Google Ads settings without ever logging their values."""
+    path = Path(path_value or "google-ads.yaml")
+    if not path.is_absolute():
+        path = ROOT / path
+    if not path.exists():
+        return {}
+    try:
+        with path.open("r", encoding="utf-8-sig") as stream:
+            payload = yaml.safe_load(stream) or {}
+    except (OSError, yaml.YAMLError) as exc:
+        raise GoogleAdsDeliveryError("File google-ads.yaml non valido.") from exc
+    return payload if isinstance(payload, dict) else {}
+
+
 def _build_client() -> tuple[GoogleAdsClient, str]:
     load_dotenv(ENV_PATH, encoding="utf-8-sig")
+    yaml_config = _read_yaml_config(os.getenv("GOOGLE_ADS_CONFIG_PATH"))
     customer_id = _normalize_customer_id(os.getenv("GOOGLE_ADS_CUSTOMER_ID"))
-    developer_token = os.getenv("GOOGLE_ADS_DEVELOPER_TOKEN", "").strip()
+    developer_token = (
+        os.getenv("GOOGLE_ADS_DEVELOPER_TOKEN", "").strip()
+        or str(yaml_config.get("developer_token") or "").strip()
+    )
     refresh_token = os.getenv("GOOGLE_ADS_REFRESH_TOKEN", "").strip()
     secrets_path = os.getenv("GOOGLE_ADS_CLIENT_SECRETS_PATH", "").strip()
 
@@ -75,6 +95,7 @@ def _build_client() -> tuple[GoogleAdsClient, str]:
     }
     login_customer_id = _normalize_customer_id(
         os.getenv("GOOGLE_ADS_LOGIN_CUSTOMER_ID")
+        or str(yaml_config.get("login_customer_id") or "")
     )
     if login_customer_id:
         config["login_customer_id"] = login_customer_id
@@ -142,4 +163,44 @@ def fetch_google_campaign_delivery(start_date: str, end_date: str) -> list[dict]
             safe_message = "Permessi insufficienti per l'account Google Ads."
         else:
             safe_message = "Lettura Google Ads non riuscita."
+        raise GoogleAdsDeliveryError(safe_message) from exc
+
+
+def fetch_google_campaign_daily_spend(start_date: str, end_date: str) -> list[dict]:
+    """Return one read-only spend row per campaign and date."""
+    client, customer_id = _build_client()
+    query = f"""
+        SELECT
+          segments.date,
+          campaign.id,
+          campaign.name,
+          metrics.cost_micros
+        FROM campaign
+        WHERE segments.date BETWEEN '{start_date}' AND '{end_date}'
+        ORDER BY segments.date, campaign.id
+    """
+    try:
+        service = client.get_service("GoogleAdsService")
+        response = service.search_stream(customer_id=customer_id, query=query)
+        rows: list[dict] = []
+        for batch in response:
+            for row in batch.results:
+                rows.append(
+                    {
+                        "date": str(row.segments.date),
+                        "platform": "Google Ads",
+                        "campaign_id": str(row.campaign.id),
+                        "campaign_name": str(row.campaign.name),
+                        "spend": int(row.metrics.cost_micros or 0) / 1_000_000,
+                    }
+                )
+        return rows
+    except Exception as exc:
+        message = str(exc).lower()
+        if "authentication" in message or "oauth" in message or "token" in message:
+            safe_message = "Autenticazione Google Ads non riuscita."
+        elif "permission" in message or "authorization" in message:
+            safe_message = "Permessi insufficienti per l'account Google Ads."
+        else:
+            safe_message = "Lettura giornaliera Google Ads non riuscita."
         raise GoogleAdsDeliveryError(safe_message) from exc
