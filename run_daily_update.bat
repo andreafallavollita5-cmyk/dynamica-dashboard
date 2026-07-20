@@ -24,5 +24,23 @@ if errorlevel 1 (
   exit /b 1
 )
 
-echo [%date% %time%] CSV dashboard aggiornato>>logs\daily_update.log
+"%PYTHON%" -m src.update_excel >>logs\daily_update.log 2>&1
+if errorlevel 1 (
+  echo [%date% %time%] Export Excel fallito>>logs\daily_update.log
+  exit /b 1
+)
+
+"%PYTHON%" -m src.archive_outputs >>logs\daily_update.log 2>&1
+if errorlevel 1 (
+  echo [%date% %time%] Archivio locale fallito>>logs\daily_update.log
+  exit /b 1
+)
+
+"%PYTHON%" -m src.publish_to_github >>logs\daily_update.log 2>&1
+if errorlevel 1 (
+  echo [%date% %time%] Pubblicazione GitHub fallita>>logs\daily_update.log
+  exit /b 1
+)
+
+echo [%date% %time%] Pipeline dashboard completata>>logs\daily_update.log
 exit /b 0

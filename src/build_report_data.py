@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import argparse
 import calendar
 import csv
 import json
 import math
+import os
 from collections.abc import Callable
 from datetime import date, datetime
 from pathlib import Path
@@ -13,9 +15,14 @@ from zoneinfo import ZoneInfo
 
 from src.ads_verification import fetch_delivery_with_status
 from src.config import load_settings
+from src.crm_excel_client import read_crm_export
+from src.crm_lead_matcher import match_crm_leads
 from src.dates import current_month_until_yesterday
 from src.google_ads_client import fetch_google_campaign_delivery
-from src.google_sheets_client import fetch_manual_inputs
+from src.google_sheets_client import (
+    fetch_crm_mapping_from_google_sheet,
+    fetch_manual_inputs,
+)
 from src.meta_ads_client import fetch_meta_campaign_delivery
 from src.report_groups import CLIENT_GROUPS, SUMMARY_FIELDS, client_subtotal_group
 from src.utils import safe_divide
@@ -23,22 +30,14 @@ from src.utils import safe_divide
 
 ROOT = Path(__file__).resolve().parents[1]
 REPORT_COLUMNS = [
-    "report_date", "start_date", "end_date", "excel_row", "funnel",
+    "row_type", "report_date", "start_date", "end_date", "excel_row", "funnel",
     "platform", "channel", "campaign_name", "investimento_media",
     "percentuale_investimento", "cpp_medio", "stima_pratiche", "cpl_target",
     "stima_lead", "stima_lead_giornaliere", "stima_lead_progressiva",
     "lead_effettive", "delta_lead", "stima_spending_progressiva",
     "speso_effettivo", "delta_speso", "delta_delivery_pct", "cpl_effettivo",
     "delta_cpl", "action", "google_campaign_id", "meta_campaign_id",
-    "dynamics_campaign_key", "source_status",
-    *(f"kpi_{field}_totale" for field in SUMMARY_FIELDS),
-    *(
-        f"subtotal_{slug}_{field}"
-        for slug, _label in CLIENT_GROUPS
-        for field in SUMMARY_FIELDS
-    ),
-    "sheet_area_clienti_lead_effettive_subtotal",
-    "sheet_area_clienti_stima_lead_progressiva_subtotal",
+    "dynamics_campaign_key", "source_status", "lead_allocation_method",
 ]
 DELIVERY_COLUMNS = [
     "platform", "campaign_id", "campaign_name", "start_date", "end_date",
@@ -47,6 +46,7 @@ DELIVERY_COLUMNS = [
 
 ManualFetcher = Callable[[], list[dict]]
 DeliveryFetcher = Callable[[str, str], list[dict]]
+MappingFetcher = Callable[[], list[dict]]
 
 
 def _number(value: object) -> float | None:
@@ -286,6 +286,8 @@ def build_report_rows(
     google_status: str = "ok",
     meta_status: str = "ok",
     report_date: date | None = None,
+    crm_leads_by_excel_row: dict[int, int] | None = None,
+    lead_allocation_methods: dict[int, str] | None = None,
 ) -> list[dict]:
     """Pure merge/calculation function, kept injectable for technical mocks."""
     report_date = report_date or date.today()
@@ -294,6 +296,9 @@ def build_report_rows(
     delivery = {"google": google_rows, "meta": meta_rows}
     statuses = {"google": google_status, "meta": meta_status}
     output: list[dict] = []
+    crm_mode = crm_leads_by_excel_row is not None
+    crm_leads_by_excel_row = crm_leads_by_excel_row or {}
+    lead_allocation_methods = lead_allocation_methods or {}
     ads_spends, ads_sources, connection_failures = _resolve_ads_spend(
         manual_rows, delivery, statuses
     )
@@ -303,7 +308,12 @@ def build_report_rows(
         platforms = _platforms_for_row(manual)
         investimento = _number(manual.get("investimento_media"))
         stima_lead = _number(manual.get("stima_lead"))
-        lead_effettive = _number(manual.get("lead_effettive_manual"))
+        excel_row = int(manual.get("excel_row") or 0)
+        lead_effettive = (
+            float(crm_leads_by_excel_row.get(excel_row, 0))
+            if crm_mode
+            else _number(manual.get("lead_effettive_manual"))
+        )
         cpl_target = _number(manual.get("cpl_target"))
 
         if connection_failures[index]:
@@ -311,33 +321,57 @@ def build_report_rows(
         elif platforms:
             speso_effettivo = ads_spends[index]
         else:
-            speso_effettivo = _number(manual.get("speso_effettivo_manual"))
-            if speso_effettivo is not None:
-                source_parts.append("manual:sheet_spend")
+            if crm_mode:
+                is_dem = client_subtotal_group(manual) == "dem"
+                speso_effettivo = (
+                    lead_effettive * cpl_target
+                    if is_dem and cpl_target is not None
+                    else None
+                )
+            else:
+                speso_effettivo = _number(manual.get("speso_effettivo_manual"))
+                if speso_effettivo is not None:
+                    source_parts.append("manual:sheet_spend")
 
         calculated_lead_giornaliere = safe_divide(stima_lead, days_in_month)
-        stima_lead_giornaliere = _sheet_value_or(
-            manual, "stima_lead_giornaliere", calculated_lead_giornaliere
+        stima_lead_giornaliere = (
+            calculated_lead_giornaliere
+            if crm_mode
+            else _sheet_value_or(
+                manual, "stima_lead_giornaliere", calculated_lead_giornaliere
+            )
         )
         calculated_lead_progressiva = (
             stima_lead_giornaliere * elapsed_days
             if stima_lead_giornaliere is not None else None
         )
-        stima_lead_progressiva = _sheet_value_or(
-            manual, "stima_lead_progressiva", calculated_lead_progressiva
+        stima_lead_progressiva = (
+            calculated_lead_progressiva
+            if crm_mode
+            else _sheet_value_or(
+                manual, "stima_lead_progressiva", calculated_lead_progressiva
+            )
         )
         calculated_spending_progressiva = (
             investimento / days_in_month * elapsed_days
             if investimento is not None else None
         )
-        stima_spending_progressiva = _sheet_value_or(
-            manual, "stima_spending_progressiva", calculated_spending_progressiva
+        stima_spending_progressiva = (
+            calculated_spending_progressiva
+            if crm_mode
+            else _sheet_value_or(
+                manual, "stima_spending_progressiva", calculated_spending_progressiva
+            )
         )
         calculated_delta_lead = (
             lead_effettive - stima_lead_progressiva
             if lead_effettive is not None and stima_lead_progressiva is not None else None
         )
-        delta_lead = _sheet_value_or(manual, "delta_lead", calculated_delta_lead)
+        delta_lead = (
+            calculated_delta_lead
+            if crm_mode
+            else _sheet_value_or(manual, "delta_lead", calculated_delta_lead)
+        )
         delta_speso = (
             speso_effettivo - stima_spending_progressiva
             if speso_effettivo is not None and stima_spending_progressiva is not None else None
@@ -351,10 +385,11 @@ def build_report_rows(
 
         output.append(
             {
+                "row_type": "campaign",
                 "report_date": report_date.isoformat(),
                 "start_date": start_date.isoformat(),
                 "end_date": end_date.isoformat(),
-                "excel_row": manual.get("excel_row"),
+                "excel_row": excel_row,
                 "funnel": manual.get("funnel"),
                 "platform": manual.get("platform"),
                 "channel": manual.get("channel"),
@@ -379,11 +414,30 @@ def build_report_rows(
                 "google_campaign_id": str(manual.get("google_campaign_id") or ""),
                 "meta_campaign_id": str(manual.get("meta_campaign_id") or ""),
                 "dynamics_campaign_key": str(manual.get("dynamics_campaign_key") or ""),
-                "source_status": ";".join(source_parts) if source_parts else "manual:no_ads_source",
+                "source_status": (
+                    (
+                        "error"
+                        if connection_failures[index]
+                        else "manual"
+                        if (
+                            client_subtotal_group(manual) == "dem"
+                            or lead_allocation_methods.get(excel_row)
+                            == "area_clienti_uniform"
+                        )
+                        else "success"
+                    )
+                    if crm_mode
+                    else ";".join(source_parts) if source_parts else "manual:no_ads_source"
+                ),
+                "lead_allocation_method": lead_allocation_methods.get(
+                    excel_row, "crm_mapping"
+                ),
             }
         )
     if not output:
         return output
+    if crm_mode:
+        return _append_official_rows(output)
 
     totals = {
         **build_official_summaries(manual_rows, output),
@@ -399,6 +453,77 @@ def build_report_rows(
     return output
 
 
+def _sum(rows: list[dict], field: str) -> float | None:
+    values = [_number(row.get(field)) for row in rows]
+    return sum(value or 0 for value in values) if any(v is not None for v in values) else None
+
+
+def _summary_row(rows: list[dict], label: str, row_type: str) -> dict:
+    investment = _sum(rows, "investimento_media")
+    practices = _sum(rows, "stima_pratiche")
+    lead_target = _sum(rows, "stima_lead")
+    lead_progress = _sum(rows, "stima_lead_progressiva")
+    leads = _sum(rows, "lead_effettive")
+    spend_plan = _sum(rows, "stima_spending_progressiva")
+    spend = _sum(rows, "speso_effettivo")
+    cpp = safe_divide(investment, practices)
+    cpl_target = safe_divide(investment, lead_target)
+    cpl = safe_divide(spend, leads)
+    delta_lead = (
+        leads - lead_progress if leads is not None and lead_progress is not None else None
+    )
+    delta_spend = (
+        spend - spend_plan if spend is not None and spend_plan is not None else None
+    )
+    statuses = {str(row.get("source_status") or "") for row in rows}
+    status = (
+        "error"
+        if "error" in statuses
+        else "partial"
+        if "partial" in statuses or len(statuses) > 1
+        else "manual"
+        if statuses == {"manual"}
+        else "success"
+    )
+    first = rows[0]
+    return {
+        **{column: None for column in REPORT_COLUMNS},
+        "row_type": row_type,
+        "report_date": first.get("report_date"),
+        "start_date": first.get("start_date"),
+        "end_date": first.get("end_date"),
+        "funnel": label,
+        "campaign_name": label,
+        "investimento_media": investment,
+        "percentuale_investimento": _sum(rows, "percentuale_investimento"),
+        "cpp_medio": cpp,
+        "stima_pratiche": practices,
+        "cpl_target": cpl_target,
+        "stima_lead": lead_target,
+        "stima_lead_giornaliere": _sum(rows, "stima_lead_giornaliere"),
+        "stima_lead_progressiva": lead_progress,
+        "lead_effettive": leads,
+        "delta_lead": delta_lead,
+        "stima_spending_progressiva": spend_plan,
+        "speso_effettivo": spend,
+        "delta_speso": delta_spend,
+        "delta_delivery_pct": safe_divide(delta_spend, spend_plan),
+        "cpl_effettivo": cpl,
+        "delta_cpl": cpl - cpl_target if cpl is not None and cpl_target is not None else None,
+        "source_status": status,
+    }
+
+
+def _append_official_rows(campaign_rows: list[dict]) -> list[dict]:
+    output = list(campaign_rows)
+    for slug, label in CLIENT_GROUPS:
+        group = [row for row in campaign_rows if client_subtotal_group(row) == slug]
+        if group:
+            output.append(_summary_row(group, f"TOT {label}", "subtotal"))
+    output.append(_summary_row(campaign_rows, "TOTALE GENERALE", "total"))
+    return output
+
+
 def _write_csv(path: Path, rows: list[dict], columns: list[str]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", newline="", encoding="utf-8-sig") as stream:
@@ -410,18 +535,48 @@ def _write_csv(path: Path, rows: list[dict], columns: list[str]) -> None:
 def build_report_data(
     output_path: Path = Path("data/report_data.csv"),
     today: date | None = None,
+    start_date: date | None = None,
+    end_date: date | None = None,
+    crm_export_path: str | Path | None = None,
     manual_fetcher: ManualFetcher | None = None,
+    mapping_fetcher: MappingFetcher | None = None,
     google_fetcher: DeliveryFetcher | None = None,
     meta_fetcher: DeliveryFetcher | None = None,
 ) -> Path:
     """Run the read-only sources and generate CSV plus safe update metadata."""
     today = today or date.today()
-    start, end = current_month_until_yesterday(today)
+    default_start, default_end = current_month_until_yesterday(today)
+    start = start_date or default_start
+    end = end_date or default_end
+    if start > end or start.year != end.year or start.month != end.month:
+        raise RuntimeError("Periodo report non valido.")
+    crm_enabled = (
+        manual_fetcher is None
+        or mapping_fetcher is not None
+        or crm_export_path is not None
+    )
     manual_fetcher = manual_fetcher or fetch_manual_inputs
+    mapping_fetcher = mapping_fetcher or fetch_crm_mapping_from_google_sheet
     google_fetcher = google_fetcher or fetch_google_campaign_delivery
     meta_fetcher = meta_fetcher or fetch_meta_campaign_delivery
 
     manual_rows = manual_fetcher()
+    crm_allocations: dict[int, int] | None = None
+    allocation_methods: dict[int, str] | None = None
+    crm_normalized: list[dict] = []
+    if crm_enabled:
+        mapping_rows = mapping_fetcher()
+        crm_path = Path(
+            crm_export_path
+            or os.getenv("CRM_EXPORT_PATH", "").strip()
+            or ROOT / "data/input/LEAD QUESTO MESE PULITE 18-07-2026 11-09-08.xlsx"
+        )
+        if not crm_path.is_absolute():
+            crm_path = ROOT / crm_path
+        crm_leads = read_crm_export(crm_path, start, end)
+        crm_allocations, allocation_methods, crm_normalized = match_crm_leads(
+            crm_leads, manual_rows, mapping_rows
+        )
     google_rows, google_verification, google_status, google_error = fetch_delivery_with_status(
         "Google Ads", google_fetcher, start.isoformat(), end.isoformat()
     )
@@ -431,6 +586,14 @@ def build_report_data(
     output_path = output_path if output_path.is_absolute() else ROOT / output_path
     _write_csv(ROOT / "data/raw/google_ads_raw.csv", google_rows, DELIVERY_COLUMNS)
     _write_csv(ROOT / "data/raw/meta_ads_raw.csv", meta_rows, DELIVERY_COLUMNS)
+    _write_csv(
+        ROOT / "data/raw/dynamics_raw.csv",
+        crm_normalized,
+        [
+            "lead_id", "campaign_crm", "utm_campaign", "created_at",
+            "match_status", "matched_excel_row", "lead_allocation_method",
+        ],
+    )
     verification_rows = google_verification + meta_verification
     _write_csv(
         ROOT / "data/raw/ads_delivery_verification.csv",
@@ -450,6 +613,8 @@ def build_report_data(
     rows = build_report_rows(
         manual_rows, google_rows, meta_rows, start, end,
         google_status=google_status, meta_status=meta_status, report_date=today,
+        crm_leads_by_excel_row=crm_allocations,
+        lead_allocation_methods=allocation_methods,
     )
     _write_csv(output_path, rows, REPORT_COLUMNS)
     metadata = {
@@ -457,7 +622,7 @@ def build_report_data(
         "start_date": start.isoformat(),
         "end_date": end.isoformat(),
         "updated_at": datetime.now(ZoneInfo(settings.timezone)).isoformat(timespec="seconds"),
-        "status": "ok",
+        "status": "success",
     }
     metadata_path = ROOT / "data/last_update.json"
     metadata_path.write_text(
@@ -466,10 +631,25 @@ def build_report_data(
     return output_path
 
 
+def _parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Genera il report Dynamica.")
+    parser.add_argument("--start-date", type=date.fromisoformat)
+    parser.add_argument("--end-date", type=date.fromisoformat)
+    parser.add_argument("--today", type=date.fromisoformat)
+    parser.add_argument("--crm-export", type=Path)
+    return parser.parse_args()
+
+
 def main() -> int:
+    args = _parse_args()
     try:
-        path = build_report_data()
-    except RuntimeError as exc:
+        path = build_report_data(
+            today=args.today,
+            start_date=args.start_date,
+            end_date=args.end_date,
+            crm_export_path=args.crm_export,
+        )
+    except Exception as exc:
         print(f"Errore: {exc}")
         return 1
     print(f"Report generato: {path}")

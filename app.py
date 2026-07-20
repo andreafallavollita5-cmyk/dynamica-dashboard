@@ -1190,15 +1190,20 @@ def prepare_excel_export_frame(
     pd, report_df, daily_df, metadata: dict, selected_start, selected_end
 ):
     """Create the all-campaign DataFrame represented by the selected date range."""
+    report_start = pd.to_datetime(metadata.get("start_date"), errors="coerce")
+    report_end = pd.to_datetime(metadata.get("end_date"), errors="coerce")
+    selected_is_report_period = (
+        not pd.isna(report_start)
+        and not pd.isna(report_end)
+        and selected_start == report_start.date()
+        and selected_end == report_end.date()
+    )
+    if selected_is_report_period and "row_type" in report_df.columns:
+        export_df = report_df.copy()
+        export_df.attrs["metadata"] = dict(metadata)
+        return export_df
+
     if daily_df.empty:
-        report_start = pd.to_datetime(metadata.get("start_date"), errors="coerce")
-        report_end = pd.to_datetime(metadata.get("end_date"), errors="coerce")
-        selected_is_report_period = (
-            not pd.isna(report_start)
-            and not pd.isna(report_end)
-            and selected_start == report_start.date()
-            and selected_end == report_end.date()
-        )
         if not selected_is_report_period:
             raise ValueError(
                 "I dati giornalieri di spesa non sono disponibili per il periodo selezionato."
@@ -1305,59 +1310,92 @@ def build_dashboard_table_frame(
     *,
     full_scope: bool,
 ):
-    """Insert Excel-style subtotals and a final total into filtered table rows."""
+    """Use campaign rows plus the official summary rows already in the report."""
     from src.report_groups import CLIENT_GROUPS, client_subtotal_group
 
     if dynamic_frame.empty:
         return pd.DataFrame(columns=[*DASHBOARD_TABLE_COLUMNS, "_row_type"])
 
-    dynamic_groups = dynamic_frame.apply(
-        lambda row: client_subtotal_group(row.to_dict()), axis=1
+    if "row_type" not in all_frame.columns:
+        dynamic_groups = dynamic_frame.apply(
+            lambda row: client_subtotal_group(row.to_dict()), axis=1
+        )
+        all_groups = all_frame.apply(
+            lambda row: client_subtotal_group(row.to_dict()), axis=1
+        )
+        output_rows: list[dict] = []
+        summaries: list[tuple[dict, bool]] = []
+        for slug, label in CLIENT_GROUPS:
+            group = dynamic_frame[dynamic_groups == slug]
+            if group.empty:
+                continue
+            static_group = static_frame.reindex(group.index)
+            fallback = _dashboard_aggregate_summary(pd, static_group, group)
+            complete = set(group.index) == set(all_frame[all_groups == slug].index)
+            summary = (
+                _dashboard_official_summary(pd, group, fallback, slug=slug)
+                if full_scope or complete else fallback
+            )
+            for _, campaign in group.iterrows():
+                campaign_row = campaign.to_dict()
+                campaign_row["_row_type"] = "campaign"
+                output_rows.append(campaign_row)
+            subtotal = {column: None for column in DASHBOARD_TABLE_COLUMNS}
+            subtotal.update(summary)
+            subtotal["funnel"] = f"TOT {label}"
+            subtotal["_row_type"] = "subtotal"
+            output_rows.append(subtotal)
+            summaries.append((summary, complete))
+        fallback = _dashboard_aggregate_summary(pd, static_frame, dynamic_frame)
+        if full_scope:
+            summary = _dashboard_official_summary(pd, dynamic_frame, fallback)
+        elif len(summaries) == 1 and summaries[0][1]:
+            summary = dict(summaries[0][0])
+        else:
+            summary = fallback
+        total = {column: None for column in DASHBOARD_TABLE_COLUMNS}
+        total.update(summary)
+        total["funnel"] = "TOTALE GENERALE"
+        total["_row_type"] = "total"
+        output_rows.append(total)
+        return pd.DataFrame(output_rows)
+
+    campaigns = (
+        dynamic_frame.copy()
+        if "row_type" not in dynamic_frame.columns
+        else dynamic_frame[dynamic_frame["row_type"].fillna("campaign") == "campaign"].copy()
     )
-    all_groups = all_frame.apply(
+    dynamic_groups = campaigns.apply(
         lambda row: client_subtotal_group(row.to_dict()), axis=1
     )
     output_rows: list[dict] = []
-    group_summaries: list[tuple[dict, bool]] = []
 
     for slug, label in CLIENT_GROUPS:
-        group = dynamic_frame[dynamic_groups == slug]
+        group = campaigns[dynamic_groups == slug]
         if group.empty:
             continue
-        static_group = static_frame.reindex(group.index)
-        fallback = _dashboard_aggregate_summary(pd, static_group, group)
-        complete_group = set(group.index) == set(all_frame[all_groups == slug].index)
-        summary = (
-            _dashboard_official_summary(pd, group, fallback, slug=slug)
-            if full_scope or complete_group else fallback
-        )
 
         for _, campaign in group.iterrows():
             campaign_row = campaign.to_dict()
             campaign_row["_row_type"] = "campaign"
             output_rows.append(campaign_row)
 
-        subtotal_row = {column: None for column in DASHBOARD_TABLE_COLUMNS}
-        subtotal_row.update(summary)
-        subtotal_row["funnel"] = f"TOT {label}"
-        subtotal_row["_row_type"] = "subtotal"
-        output_rows.append(subtotal_row)
-        group_summaries.append((summary, complete_group))
+        if full_scope:
+            official = all_frame[
+                (all_frame.get("row_type", "") == "subtotal")
+                & (all_frame["funnel"].astype(str) == f"TOT {label}")
+            ]
+            if not official.empty:
+                subtotal_row = official.iloc[0].to_dict()
+                subtotal_row["_row_type"] = "subtotal"
+                output_rows.append(subtotal_row)
 
-    total_fallback = _dashboard_aggregate_summary(pd, static_frame, dynamic_frame)
     if full_scope:
-        total_summary = _dashboard_official_summary(
-            pd, dynamic_frame, total_fallback
-        )
-    elif len(group_summaries) == 1 and group_summaries[0][1]:
-        total_summary = dict(group_summaries[0][0])
-    else:
-        total_summary = total_fallback
-    total_row = {column: None for column in DASHBOARD_TABLE_COLUMNS}
-    total_row.update(total_summary)
-    total_row["funnel"] = "TOTALE GENERALE"
-    total_row["_row_type"] = "total"
-    output_rows.append(total_row)
+        official_total = all_frame[all_frame.get("row_type", "") == "total"]
+        if not official_total.empty:
+            total_row = official_total.iloc[0].to_dict()
+            total_row["_row_type"] = "total"
+            output_rows.append(total_row)
     return pd.DataFrame(output_rows)
 
 
@@ -1375,52 +1413,52 @@ def build_csv_download(
 
 def calculate_dashboard_metrics(df, use_official_totals: bool = False) -> dict:
     """Calculate KPI values without altering campaign-level table data."""
-    def first_total(column: str):
-        if column not in df.columns:
-            return None
-        values = df[column].dropna()
-        return None if values.empty else float(values.iloc[0])
+    campaigns = (
+        df
+        if "row_type" not in df.columns
+        else df[df["row_type"].fillna("campaign") == "campaign"]
+    )
+    source = campaigns
+    legacy_official = use_official_totals and "row_type" not in df.columns
+    if use_official_totals and "row_type" in df.columns:
+        totals = df[df["row_type"] == "total"]
+        if not totals.empty:
+            source = totals.iloc[[0]]
 
-    spend_available = df["speso_effettivo"].notna().any()
-    spend_total = df["speso_effettivo"].sum(skipna=True) if spend_available else None
-    budget_total = df["investimento_media"].sum(skipna=True)
-    planned_spend = df["stima_spending_progressiva"].sum(skipna=True)
-    lead_available = df["lead_effettive"].notna().any()
-    lead_total = df["lead_effettive"].sum(skipna=True)
-    lead_target = df["stima_lead_progressiva"].sum(skipna=True)
-    cpl_target_avg = df["cpl_target"].mean(skipna=True)
-    official_delta_spend = None
-    official_delivery_delta = None
-    official_cpl = None
+    spend_available = source["speso_effettivo"].notna().any()
+    spend_total = source["speso_effettivo"].sum(skipna=True) if spend_available else None
+    budget_total = source["investimento_media"].sum(skipna=True)
+    planned_spend = source["stima_spending_progressiva"].sum(skipna=True)
+    lead_available = source["lead_effettive"].notna().any()
+    lead_total = source["lead_effettive"].sum(skipna=True)
+    lead_target = source["stima_lead_progressiva"].sum(skipna=True)
+    cpl_target_avg = source["cpl_target"].mean(skipna=True)
 
-    if use_official_totals:
-        official_spend = first_total("kpi_speso_effettivo_totale")
-        official_budget = first_total("kpi_investimento_media_totale")
-        official_plan = first_total("kpi_stima_spending_progressiva_totale")
-        official_leads = first_total("kpi_lead_effettive_totale")
-        official_lead_target = first_total("kpi_stima_lead_progressiva_totale")
-        official_cpl_target = first_total("kpi_cpl_target_totale")
-        official_delta_spend = first_total("kpi_delta_speso_totale")
-        official_delivery_delta = first_total("kpi_delta_delivery_pct_totale")
-        official_cpl = first_total("kpi_cpl_effettivo_totale")
-        spend_total = spend_total if official_spend is None else official_spend
-        budget_total = budget_total if official_budget is None else official_budget
-        planned_spend = planned_spend if official_plan is None else official_plan
-        lead_total = lead_total if official_leads is None else official_leads
-        lead_target = lead_target if official_lead_target is None else official_lead_target
-        cpl_target_avg = cpl_target_avg if official_cpl_target is None else official_cpl_target
+    if legacy_official:
+        def first_total(column: str):
+            values = df[column].dropna() if column in df.columns else []
+            return None if len(values) == 0 else float(values.iloc[0])
+
+        spend_total = first_total("kpi_speso_effettivo_totale") or spend_total
+        budget_total = first_total("kpi_investimento_media_totale") or budget_total
+        planned_spend = first_total("kpi_stima_spending_progressiva_totale") or planned_spend
+        lead_total = first_total("kpi_lead_effettive_totale") or lead_total
+        lead_target = first_total("kpi_stima_lead_progressiva_totale") or lead_target
+        cpl_target_avg = first_total("kpi_cpl_target_totale") or cpl_target_avg
         lead_available = lead_total is not None
 
     delta_spend = spend_total - planned_spend if spend_total is not None else None
     delivery_ratio = ratio(spend_total, planned_spend) if spend_total is not None else None
     lead_ratio = ratio(lead_total, lead_target) if lead_available else None
     cpl_avg = ratio(spend_total, lead_total) if lead_available and spend_total is not None else None
-    if official_delta_spend is not None:
-        delta_spend = official_delta_spend
-    if official_delivery_delta is not None:
-        delivery_ratio = 1 + official_delivery_delta
-    if official_cpl is not None:
-        cpl_avg = official_cpl
+    if use_official_totals and len(source.index) == 1:
+        row = source.iloc[0]
+        if "delta_speso" in row and row.get("delta_speso") == row.get("delta_speso"):
+            delta_spend = float(row["delta_speso"])
+        if "delta_delivery_pct" in row and row.get("delta_delivery_pct") == row.get("delta_delivery_pct"):
+            delivery_ratio = 1 + float(row["delta_delivery_pct"])
+        if "cpl_effettivo" in row and row.get("cpl_effettivo") == row.get("cpl_effettivo"):
+            cpl_avg = float(row["cpl_effettivo"])
     return {
         "spend_total": spend_total,
         "budget_total": budget_total,
@@ -1514,16 +1552,24 @@ def main() -> None:
     st.markdown(f'<div id="dashboard-theme" data-theme="{theme_name}"></div>', unsafe_allow_html=True)
 
     metadata = load_last_update()
-    df = prepare_data(pd)
+    report_df = prepare_data(pd)
     daily_spend = prepare_spend_daily(pd)
     daily_status = load_spend_daily_status()
-    df = add_unmapped_daily_campaigns(pd, df, daily_spend)
+    if "row_type" in report_df.columns:
+        official_rows = report_df[report_df["row_type"].isin(["subtotal", "total"])].copy()
+        campaign_df = report_df[report_df["row_type"] == "campaign"].copy()
+    else:
+        official_rows = report_df.iloc[0:0].copy()
+        campaign_df = report_df.copy()
+        campaign_df["row_type"] = "campaign"
+    campaign_df = add_unmapped_daily_campaigns(pd, campaign_df, daily_spend)
+    df = pd.concat([campaign_df, official_rows], ignore_index=True, sort=False)
 
     if df.empty:
         st.error("Dati dashboard non disponibili.")
         return
 
-    filtered = render_sidebar(st, df)
+    filtered = render_sidebar(st, campaign_df)
 
     start_date = first_value(metadata, ["start_date"])
     end_date = first_value(metadata, ["end_date"])
@@ -1539,7 +1585,7 @@ def main() -> None:
 
     top_left, top_right = st.columns([1, 1.08], gap="large")
     project_options = ["Tutti i progetti"] + sorted(
-        str(value) for value in df["campaign_name"].dropna().unique()
+        str(value) for value in campaign_df["campaign_name"].dropna().unique()
     )
     yesterday = date.today() - timedelta(days=1)
     if daily_spend.empty:
@@ -1609,13 +1655,19 @@ def main() -> None:
 
     full_scope = (
         selected_project == "Tutti i progetti"
-        and len(filtered.index) == len(df.index)
+        and len(filtered.index) == len(campaign_df.index)
+        and selected_start == pd.to_datetime(metadata["start_date"]).date()
+        and selected_end == pd.to_datetime(metadata["end_date"]).date()
     )
-    lead_metrics = calculate_dashboard_metrics(filtered, use_official_totals=full_scope)
+    lead_metrics = calculate_dashboard_metrics(
+        df if full_scope else filtered, use_official_totals=full_scope
+    )
     dynamic_filtered = apply_daily_spend_filter(
         pd, filtered, daily_spend, selected_start, selected_end
     )
-    spend_metrics = calculate_dashboard_metrics(dynamic_filtered, use_official_totals=False)
+    spend_metrics = calculate_dashboard_metrics(
+        df if full_scope else dynamic_filtered, use_official_totals=full_scope
+    )
     metrics = lead_metrics.copy()
     for key in ("spend_total", "planned_spend", "delta_spend", "delivery_ratio"):
         metrics[key] = spend_metrics[key]
@@ -1787,7 +1839,7 @@ def main() -> None:
     table_frame = build_dashboard_table_frame(
         pd,
         filtered,
-        dynamic_filtered,
+        df[df["row_type"] == "campaign"] if full_scope else dynamic_filtered,
         df,
         full_scope=full_scope,
     )
@@ -1884,7 +1936,7 @@ def main() -> None:
                 width="stretch",
             )
             csv_bytes, csv_filename = build_csv_download(
-                dynamic_filtered, selected_start, selected_end
+                df if full_scope else dynamic_filtered, selected_start, selected_end
             )
             st.download_button(
                 "Scarica CSV dati",

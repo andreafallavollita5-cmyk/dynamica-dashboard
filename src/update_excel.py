@@ -202,6 +202,10 @@ def _classify_source_status(report_df: pd.DataFrame) -> str:
 
 def _prepare_dataframe(report_df: pd.DataFrame) -> pd.DataFrame:
     frame = report_df.copy()
+    if "row_type" not in frame.columns:
+        frame["row_type"] = "campaign"
+    else:
+        frame["row_type"] = frame["row_type"].fillna("campaign")
     if "enabled" in frame.columns:
         frame = frame[frame["enabled"].map(_enabled)].copy()
 
@@ -264,14 +268,25 @@ def _first_official_value(frame: pd.DataFrame, column: str) -> float | None:
     return None
 
 
-def _official_summary_values(
-    frame: pd.DataFrame, slug: str | None = None
-) -> list[Any]:
-    """Read official summary fields only; never rebuild them in the exporter."""
-    if slug is None:
-        columns = [f"kpi_{field}_totale" for field in SUMMARY_FIELDS]
-    else:
-        columns = [f"subtotal_{slug}_{field}" for field in SUMMARY_FIELDS]
+def _official_summary_values(row: pd.Series, days_in_month: int) -> list[Any]:
+    """Read one official report row; never rebuild subtotal or total values."""
+    values: list[Any] = []
+    for field in SUMMARY_FIELDS:
+        if field == "stima_spending_giornaliera":
+            value = _safe_divide(row.get("investimento_media"), days_in_month)
+        else:
+            value = _as_number(row.get(field))
+        values.append(value)
+    return values + [None]
+
+
+def _legacy_summary_values(frame: pd.DataFrame, slug: str | None = None) -> list[Any]:
+    """Compatibility path for historical in-memory frames used by older callers."""
+    columns = (
+        [f"kpi_{field}_totale" for field in SUMMARY_FIELDS]
+        if slug is None
+        else [f"subtotal_{slug}_{field}" for field in SUMMARY_FIELDS]
+    )
     return [_first_official_value(frame, column) for column in columns] + [None]
 
 
@@ -508,12 +523,16 @@ def generate_client_excel(
         raise FileNotFoundError("Template Excel non disponibile.")
 
     frame = _prepare_dataframe(report_df)
-    if frame.empty:
+    campaign_frame = frame[
+        frame.get("row_type", "campaign").fillna("campaign") == "campaign"
+    ].copy()
+    official_frame = frame[frame.get("row_type", "") != "campaign"].copy()
+    if campaign_frame.empty:
         raise ValueError("Nessuna campagna disponibile per l'export.")
-    metadata = _metadata(report_df, frame)
+    metadata = _metadata(report_df, campaign_frame)
     days_in_month = metadata["days_in_month"]
-    funnel_groups = _client_subtotal_groups(frame)
-    output_row_count = len(frame) + len(funnel_groups)
+    funnel_groups = _client_subtotal_groups(campaign_frame)
+    output_row_count = len(campaign_frame) + len(funnel_groups)
 
     workbook = load_workbook(template)
     report_ws = workbook[REPORT_SHEET]
@@ -587,16 +606,35 @@ def generate_client_excel(
             current_row += 1
 
         subtotal_label = _as_text(funnel_value) or "Senza funnel"
+        subtotal = official_frame[
+            (official_frame.get("row_type", "") == "subtotal")
+            & (official_frame["funnel"].astype(str) == f"TOT {subtotal_label}")
+        ]
         subtotal_values = [f"TOT {subtotal_label}", None, None, None, None]
-        subtotal_values.extend(_official_summary_values(frame, group_slug))
+        if len(subtotal.index) == 1:
+            subtotal_values.extend(
+                _official_summary_values(subtotal.iloc[0], days_in_month)
+            )
+        elif official_frame.empty:
+            subtotal_values.extend(_legacy_summary_values(frame, group_slug))
+        else:
+            raise ValueError(f"Riga ufficiale TOT {subtotal_label} mancante o duplicata.")
         _write_report_values(report_ws, current_row, subtotal_values)
         report_ws.merge_cells(start_row=current_row, start_column=1, end_row=current_row, end_column=5)
         _style_subtotal(report_ws, current_row)
         current_row += 1
 
     _copy_row_style(report_ws, total_row, total_row)
+    official_total = official_frame[official_frame.get("row_type", "") == "total"]
     total_values = ["TOTALE GENERALE", None, None, None, None]
-    total_values.extend(_official_summary_values(frame))
+    if len(official_total.index) == 1:
+        total_values.extend(
+            _official_summary_values(official_total.iloc[0], days_in_month)
+        )
+    elif official_frame.empty:
+        total_values.extend(_legacy_summary_values(frame))
+    else:
+        raise ValueError("Riga ufficiale TOTALE GENERALE mancante o duplicata.")
     _write_report_values(report_ws, total_row, total_values)
     report_ws.merge_cells(start_row=total_row, start_column=1, end_row=total_row, end_column=5)
     _style_total(report_ws, total_row)
@@ -668,7 +706,9 @@ def generate_client_excel(
             temporary_path = Path(temporary_file.name)
         workbook.save(temporary_path)
         workbook.close()
-        _validate_workbook(temporary_path, len(frame), metadata["end_date"].date())
+        _validate_workbook(
+            temporary_path, len(campaign_frame), metadata["end_date"].date()
+        )
         os.replace(temporary_path, dated_path)
         temporary_path = None
 

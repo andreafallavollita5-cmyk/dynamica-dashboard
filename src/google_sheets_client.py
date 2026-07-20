@@ -23,6 +23,7 @@ from src.report_groups import CLIENT_GROUPS, SUMMARY_FIELDS
 ROOT = Path(__file__).resolve().parents[1]
 ENV_PATH = ROOT / ".env"
 RAW_OUTPUT_PATH = ROOT / "data" / "raw" / "google_sheet_raw.csv"
+MAPPING_WORKSHEET_DEFAULT = "Mapping campagne-crm"
 
 REQUIRED_COLUMNS = [
     "excel_row",
@@ -375,6 +376,52 @@ def fetch_manual_plan_from_google_sheet() -> list[dict]:
 def fetch_manual_inputs() -> list[dict]:
     """Backward-compatible alias for the manual plan reader."""
     return fetch_manual_plan_from_google_sheet()
+
+
+def fetch_crm_mapping_from_google_sheet() -> list[dict]:
+    """Read the CRM mapping worksheet without changing the spreadsheet."""
+    config = _load_sheet_config()
+    service_account_path = _resolve_service_account_path(
+        config["service_account_json_path"]
+    )
+    worksheet_name = os.getenv(
+        "GOOGLE_SHEET_MAPPING_WORKSHEET_NAME", MAPPING_WORKSHEET_DEFAULT
+    ).strip()
+    try:
+        client = gspread.service_account(filename=str(service_account_path))
+        worksheet = client.open_by_key(config["sheet_id"]).worksheet(worksheet_name)
+        values = worksheet.get_all_values(
+            value_render_option=ValueRenderOption.unformatted
+        )
+    except Exception as exc:
+        raise GoogleSheetReadError(
+            "Impossibile leggere il mapping CRM dal Google Sheet."
+        ) from exc
+
+    if len(values) < 3:
+        raise GoogleSheetReadError("Worksheet mapping CRM vuoto o incompleto.")
+
+    rows: list[dict] = []
+    for mapping_row, raw in enumerate(values[2:], start=3):
+        padded = list(raw) + [""] * max(0, 10 - len(raw))
+        if not any(str(value).strip() for value in padded[:10]):
+            continue
+        rows.append(
+            {
+                "mapping_row": mapping_row,
+                "funnel": str(padded[0]).strip(),
+                "channel": str(padded[1]).strip(),
+                "campaign_plan": str(padded[2]).strip(),
+                "campaign_id": str(padded[3]).strip(),
+                "campaign_crm": str(padded[4]).strip(),
+                "utm_campaign_1": str(padded[5]).strip(),
+                "utm_source_ignored": str(padded[6]).strip(),
+                "utm_campaign_2": str(padded[7]).strip(),
+                "start_date": str(padded[8]).strip(),
+                "end_date": str(padded[9]).strip(),
+            }
+        )
+    return rows
 
 
 def _matches_target(row: dict) -> bool:
