@@ -14,6 +14,41 @@ Lo speso viene associato prima tramite `google_campaign_id` o
 presente. Conversioni Google e azioni/lead Meta non vengono richieste né usate
 come lead effettive.
 
+## Write-back Google Sheet
+
+Dopo la generazione di `data/report_data.csv`, la pipeline aggiorna il
+worksheet `manual_inputs` con:
+
+```powershell
+.\.venv\Scripts\python.exe -m src.writeback_google_sheet
+```
+
+Il periodo predefinito va dal primo giorno del mese a ieri. Per verificare un
+periodo senza scrivere:
+
+```powershell
+.\.venv\Scripts\python.exe -m src.writeback_google_sheet --dry-run --end-date 2026-07-17
+```
+
+Il write-back non modifica mai A:K o W, non inserisce righe e usa gli ID
+campagna per il matching. Le campagne DEM, prive di ID, sono riconosciute solo
+tramite nome esatto e mantengono la formula `lead x CPL`. Prima della prima
+scrittura viene creata una copia nascosta di `manual_inputs`; il worksheet
+`Mapping campagne-crm` viene soltanto letto.
+
+## Metriche giornaliere dashboard
+
+La pipeline genera `data/report_daily_metrics.csv` dopo `report_data.csv`. Il
+file contiene soltanto aggregati giornalieri per campagna: speso, numero lead,
+ID campagna e riga del planning. Non contiene Id Lead, UTM, date/ore individuali
+o altri dati personali CRM.
+
+La dashboard usa questo file per ricalcolare campagne, KPI, subtotali e totale
+su qualsiasi intervallo selezionato. Area Clienti viene ripartita sulle cinque
+righe dopo aver sommato l'intero intervallo; lo speso DEM resta `lead x CPL`.
+CSV ed Excel scaricati includono le righe `TOT Area Clienti`, `TOT Lead Veloce`,
+`TOT DEM` e `TOTALE GENERALE` relative alle date selezionate.
+
 ## Verifica locale API
 
 Sul solo PC aziendale impostare nel file `.env`:

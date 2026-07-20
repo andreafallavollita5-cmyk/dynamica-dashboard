@@ -13,7 +13,7 @@ from typing import Iterable
 
 
 DATA_PATH = Path("data/report_data.csv")
-REPORT_DAILY_PATH = Path("data/report_daily.csv")
+REPORT_DAILY_PATH = Path("data/report_daily_metrics.csv")
 REPORT_DAILY_STATUS_PATH = Path("data/report_daily_status.json")
 LAST_UPDATE_PATH = Path("data/last_update.json")
 
@@ -986,12 +986,32 @@ def prepare_data(pd) -> "pd.DataFrame":
 
 
 def prepare_spend_daily(pd) -> "pd.DataFrame":
-    """Load the local API-only daily spend file."""
+    """Load privacy-safe daily spend and CRM lead aggregates."""
     if not REPORT_DAILY_PATH.exists():
-        return pd.DataFrame(columns=["date", "source", "campaign_id", "campaign_name", "spend"])
-    daily = pd.read_csv(REPORT_DAILY_PATH, dtype={"campaign_id": "string"})
+        return pd.DataFrame(
+            columns=[
+                "date", "source", "excel_row", "spend_rollup_excel_row", "campaign_id",
+                "campaign_name", "spend", "leads", "monthly_lead_target",
+                "lead_allocation_method",
+            ]
+        )
+    daily = pd.read_csv(
+        REPORT_DAILY_PATH,
+        dtype={
+            "campaign_id": "string", "excel_row": "string",
+            "spend_rollup_excel_row": "string",
+        },
+    )
     daily["date"] = pd.to_datetime(daily["date"], errors="coerce").dt.date
-    daily["spend"] = pd.to_numeric(daily["spend"], errors="coerce").fillna(0.0)
+    daily["spend"] = pd.to_numeric(daily.get("spend"), errors="coerce")
+    daily["leads"] = (
+        pd.to_numeric(daily["leads"], errors="coerce")
+        if "leads" in daily else pd.NA
+    )
+    daily["monthly_lead_target"] = (
+        pd.to_numeric(daily["monthly_lead_target"], errors="coerce")
+        if "monthly_lead_target" in daily else pd.NA
+    )
     daily["campaign_id"] = daily["campaign_id"].fillna("").astype(str).str.strip()
     excluded = (
         daily["campaign_name"].fillna("").astype(str).str.casefold().isin(
@@ -1031,7 +1051,9 @@ def add_unmapped_daily_campaigns(pd, report_df, daily_df):
     additions = []
     for row in totals.itertuples(index=False):
         if (
-            float(row.spend or 0) <= 0
+            row.source not in {"google_ads", "meta_ads"}
+            or pd.isna(row.spend)
+            or float(row.spend or 0) <= 0
             or row.campaign_id in configured.get(row.source, set())
             or row.campaign_id in EXCLUDED_CAMPAIGN_IDS
             or str(row.campaign_name or "").casefold() in EXCLUDED_CAMPAIGN_NAMES
@@ -1083,16 +1105,20 @@ def normalize_period(selected_period, fallback_start, fallback_end):
 
 
 def apply_daily_spend_filter(pd, report_df, daily_df, start_date, end_date):
-    """Replace Ads spend/plan fields only; all lead and CPL fields stay untouched."""
+    """Apply daily Ads spend and CRM lead aggregates to the selected interval."""
     from calendar import monthrange
     import re
+    from src.report_groups import client_subtotal_group
 
     if daily_df.empty:
         return report_df.copy()
     filtered_daily = daily_df[
         (daily_df["date"] >= start_date) & (daily_df["date"] <= end_date)
     ].copy()
-    totals = filtered_daily.groupby(["source", "campaign_id"], dropna=False)["spend"].sum()
+    ads_daily = filtered_daily[
+        filtered_daily["source"].isin(["google_ads", "meta_ads"])
+    ].copy()
+    totals = ads_daily.groupby(["source", "campaign_id"], dropna=False)["spend"].sum()
     result = report_df.copy()
     selected_days = (end_date - start_date).days + 1
     days_in_month = monthrange(start_date.year, start_date.month)[1]
@@ -1103,17 +1129,115 @@ def apply_daily_spend_filter(pd, report_df, daily_df, start_date, end_date):
         text = str(value).strip()
         return text[:-2] if text.endswith(".0") else text
 
+    has_spend_rollup = "spend_rollup_excel_row" in ads_daily.columns
+    spend_by_excel_row: dict[str, float] = {}
+    rolled_source_rows: set[str] = set()
+    if has_spend_rollup:
+        ads_daily["excel_row"] = ads_daily.get("excel_row", "").map(clean_id)
+        ads_daily["spend_rollup_excel_row"] = ads_daily[
+            "spend_rollup_excel_row"
+        ].map(clean_id)
+        mapped_spend = ads_daily[ads_daily["spend_rollup_excel_row"] != ""]
+        spend_by_excel_row = (
+            mapped_spend.groupby("spend_rollup_excel_row")["spend"].sum().to_dict()
+        )
+        rolled_source_rows = set(
+            mapped_spend.loc[
+                mapped_spend["excel_row"]
+                != mapped_spend["spend_rollup_excel_row"],
+                "excel_row",
+            ]
+        )
+
+    leads_available = "leads" in filtered_daily.columns
+    if leads_available:
+        crm = filtered_daily[
+            filtered_daily["source"].isin(["crm", "crm_area_clienti"])
+        ].copy()
+        crm["leads"] = pd.to_numeric(crm["leads"], errors="coerce").fillna(0)
+        crm["excel_row"] = crm.get("excel_row", "").map(clean_id)
+        normal_counts = (
+            crm[crm["source"] == "crm"]
+            .groupby("excel_row", dropna=False)["leads"]
+            .sum()
+            .to_dict()
+        )
+        area_total = int(
+            crm.loc[crm["source"] == "crm_area_clienti", "leads"].sum()
+        )
+        area_indexes = sorted(
+            [
+                index
+                for index, row in result.iterrows()
+                if client_subtotal_group(row.to_dict()) == "area_clienti"
+                and clean_id(row.get("excel_row"))
+            ],
+            key=lambda index: int(float(result.at[index, "excel_row"])),
+        )
+        if area_total and len(area_indexes) != 5:
+            raise ValueError(
+                "La ripartizione Area Clienti richiede tutte le cinque righe."
+            )
+        area_allocations: dict[int, int] = {}
+        if area_indexes:
+            quota, remainder = divmod(area_total, len(area_indexes))
+            area_allocations = {
+                index: quota + (1 if position < remainder else 0)
+                for position, index in enumerate(area_indexes)
+            }
+        dynamic_leads: dict[int, float | None] = {}
+        for index, row in result.iterrows():
+            excel_row = clean_id(row.get("excel_row"))
+            if not excel_row:
+                dynamic_leads[index] = None
+            elif index in area_allocations:
+                dynamic_leads[index] = float(area_allocations[index])
+            else:
+                dynamic_leads[index] = float(normal_counts.get(excel_row, 0))
+        result["lead_effettive"] = pd.Series(dynamic_leads)
+        if "stima_lead" in result:
+            result["stima_lead_giornaliere"] = (
+                pd.to_numeric(result["stima_lead"], errors="coerce") / days_in_month
+            )
+            result["stima_lead_progressiva"] = (
+                result["stima_lead_giornaliere"] * selected_days
+            )
+        result["delta_lead"] = (
+            pd.to_numeric(result["lead_effettive"], errors="coerce")
+            - pd.to_numeric(result.get("stima_lead_progressiva"), errors="coerce")
+        )
+
     dynamic_values: dict[int, float | None] = {}
     for index, row in result.iterrows():
         platform = str(row.get("platform") or "").casefold()
+        excel_row = clean_id(row.get("excel_row"))
         if "google" in platform:
             key = ("google_ads", clean_id(row.get("google_campaign_id")))
         elif "meta" in platform:
             key = ("meta_ads", clean_id(row.get("meta_campaign_id")))
         else:
-            dynamic_values[index] = row.get("speso_effettivo")
+            is_dem = client_subtotal_group(row.to_dict()) == "dem"
+            lead_value = pd.to_numeric(
+                pd.Series([row.get("lead_effettive")]), errors="coerce"
+            ).iloc[0]
+            cpl_value = pd.to_numeric(
+                pd.Series([row.get("cpl_target")]), errors="coerce"
+            ).iloc[0]
+            dynamic_values[index] = (
+                float(lead_value * cpl_value)
+                if leads_available and is_dem
+                and not pd.isna(lead_value) and not pd.isna(cpl_value)
+                else row.get("speso_effettivo")
+            )
             continue
-        dynamic_values[index] = float(totals.get(key, 0.0)) if key[1] else 0.0
+        if has_spend_rollup and excel_row:
+            dynamic_values[index] = (
+                None
+                if excel_row in rolled_source_rows
+                else float(spend_by_excel_row.get(excel_row, 0.0))
+            )
+        else:
+            dynamic_values[index] = float(totals.get(key, 0.0)) if key[1] else 0.0
 
     # Preserve the existing continuation-row rollup used by report_data.csv.
     excel_row_to_index = {
@@ -1137,6 +1261,15 @@ def apply_daily_spend_filter(pd, report_df, daily_df, start_date, end_date):
         )
     result["delta_speso"] = result["speso_effettivo"] - result["stima_spending_progressiva"]
     result["delta_delivery_pct"] = result["delta_speso"] / result["stima_spending_progressiva"].replace(0, pd.NA)
+    if leads_available:
+        result["cpl_effettivo"] = (
+            pd.to_numeric(result["speso_effettivo"], errors="coerce")
+            / pd.to_numeric(result["lead_effettive"], errors="coerce").replace(0, pd.NA)
+        )
+        result["delta_cpl"] = (
+            result["cpl_effettivo"]
+            - pd.to_numeric(result.get("cpl_target"), errors="coerce")
+        )
     _update_dynamic_spend_summaries(pd, result)
     return result
 
@@ -1186,6 +1319,123 @@ def _update_dynamic_spend_summaries(pd, frame) -> None:
             frame[f"subtotal_{slug}_{field}"] = value
 
 
+def build_period_report_frame(
+    pd, report_df, daily_df, selected_start, selected_end
+):
+    """Return campaign plus official summary rows for the selected dates."""
+    from calendar import monthrange
+    from src.build_report_data import _summary_row
+    from src.report_groups import CLIENT_GROUPS, client_subtotal_group
+
+    report_start = pd.to_datetime(report_df["start_date"], errors="coerce").dt.date
+    report_end = pd.to_datetime(report_df["end_date"], errors="coerce").dt.date
+    if (
+        report_start.notna().any()
+        and report_end.notna().any()
+        and selected_start == report_start.dropna().iloc[0]
+        and selected_end == report_end.dropna().iloc[0]
+        and "row_type" in report_df.columns
+    ):
+        return report_df.copy()
+
+    campaigns = (
+        report_df.copy()
+        if "row_type" not in report_df.columns
+        else report_df[report_df["row_type"].fillna("campaign") == "campaign"].copy()
+    )
+    dynamic = apply_daily_spend_filter(
+        pd, campaigns, daily_df, selected_start, selected_end
+    )
+    dynamic["row_type"] = "campaign"
+    dynamic["start_date"] = selected_start.isoformat()
+    dynamic["end_date"] = selected_end.isoformat()
+    days = (selected_end - selected_start).days + 1
+    days_in_month = monthrange(selected_start.year, selected_start.month)[1]
+    official = (
+        report_df[report_df["row_type"].isin(["subtotal", "total"])].copy()
+        if "row_type" in report_df.columns else report_df.iloc[0:0].copy()
+    )
+
+    summaries: list[dict] = []
+    for slug, label in CLIENT_GROUPS:
+        group = dynamic[
+            dynamic.apply(
+                lambda row: client_subtotal_group(row.to_dict()) == slug, axis=1
+            )
+        ]
+        if group.empty:
+            continue
+        summary = _summary_row(
+            group.to_dict("records"), f"TOT {label}", "subtotal"
+        )
+        source = official[official["funnel"].astype(str) == f"TOT {label}"]
+        if len(source.index) == 1:
+            source_row = source.iloc[0]
+            for field in (
+                "stima_pratiche", "stima_lead", "cpp_medio", "cpl_target"
+            ):
+                if pd.isna(summary.get(field)):
+                    value = pd.to_numeric(
+                        pd.Series([source_row.get(field)]), errors="coerce"
+                    ).iloc[0]
+                    summary[field] = None if pd.isna(value) else float(value)
+        if summary.get("stima_lead") is None and "monthly_lead_target" in daily_df:
+            planning = daily_df[
+                (daily_df["source"] == "planning")
+                & (daily_df["campaign_name"].astype(str) == f"TOT {label}")
+            ]
+            target = pd.to_numeric(
+                planning["monthly_lead_target"], errors="coerce"
+            ).dropna()
+            if not target.empty:
+                summary["stima_lead"] = float(target.iloc[0])
+        lead_target = summary.get("stima_lead")
+        if lead_target is not None:
+            summary["stima_lead_giornaliere"] = lead_target / days_in_month
+            summary["stima_lead_progressiva"] = (
+                summary["stima_lead_giornaliere"] * days
+            )
+            summary["delta_lead"] = (
+                summary["lead_effettive"] - summary["stima_lead_progressiva"]
+                if summary.get("lead_effettive") is not None else None
+            )
+        summary["start_date"] = selected_start.isoformat()
+        summary["end_date"] = selected_end.isoformat()
+        summaries.append(summary)
+
+    total = _summary_row(
+        dynamic.to_dict("records"), "TOTALE GENERALE", "total"
+    )
+    for field in ("stima_pratiche", "stima_lead", "stima_lead_giornaliere"):
+        values = [summary.get(field) for summary in summaries]
+        total[field] = (
+            sum(float(value) for value in values if value is not None)
+            if any(value is not None for value in values) else None
+        )
+    if total.get("stima_lead_giornaliere") is not None:
+        total["stima_lead_progressiva"] = total["stima_lead_giornaliere"] * days
+        total["delta_lead"] = (
+            total["lead_effettive"] - total["stima_lead_progressiva"]
+            if total.get("lead_effettive") is not None else None
+        )
+    if total.get("investimento_media") is not None and total.get("stima_lead"):
+        total["cpl_target"] = total["investimento_media"] / total["stima_lead"]
+    if total.get("speso_effettivo") is not None and total.get("lead_effettive"):
+        total["cpl_effettivo"] = total["speso_effettivo"] / total["lead_effettive"]
+    total["delta_cpl"] = (
+        total["cpl_effettivo"] - total["cpl_target"]
+        if total.get("cpl_effettivo") is not None
+        and total.get("cpl_target") is not None else None
+    )
+    total["start_date"] = selected_start.isoformat()
+    total["end_date"] = selected_end.isoformat()
+    return pd.concat(
+        [dynamic, pd.DataFrame([*summaries, total])],
+        ignore_index=True,
+        sort=False,
+    )
+
+
 def prepare_excel_export_frame(
     pd, report_df, daily_df, metadata: dict, selected_start, selected_end
 ):
@@ -1209,7 +1459,7 @@ def prepare_excel_export_frame(
                 "I dati giornalieri di spesa non sono disponibili per il periodo selezionato."
             )
 
-    export_df = apply_daily_spend_filter(
+    export_df = build_period_report_frame(
         pd, report_df, daily_df, selected_start, selected_end
     )
     export_metadata = dict(metadata)
@@ -1264,10 +1514,9 @@ def _dashboard_aggregate_summary(pd, static_frame, dynamic_frame) -> dict:
     )
     cpl_targets = _dashboard_numeric_series(pd, static_frame, "cpl_target")
     cpl_target = None if cpl_targets.empty else float(cpl_targets.mean())
-    static_spend = total(static_frame, "speso_effettivo")
     cpl_effective = (
-        static_spend / leads
-        if static_spend is not None and leads not in (None, 0) else None
+        spent / leads
+        if spent is not None and leads not in (None, 0) else None
     )
     delta_cpl = (
         cpl_effective - cpl_target
@@ -1365,10 +1614,25 @@ def build_dashboard_table_frame(
         if "row_type" not in dynamic_frame.columns
         else dynamic_frame[dynamic_frame["row_type"].fillna("campaign") == "campaign"].copy()
     )
+    all_campaigns = all_frame[
+        all_frame["row_type"].fillna("campaign") == "campaign"
+    ].copy()
     dynamic_groups = campaigns.apply(
         lambda row: client_subtotal_group(row.to_dict()), axis=1
     )
+    all_groups = all_campaigns.apply(
+        lambda row: client_subtotal_group(row.to_dict()), axis=1
+    )
     output_rows: list[dict] = []
+
+    def identities(frame):
+        return {
+            (
+                str(row.get("excel_row") or ""),
+                str(row.get("campaign_name") or ""),
+            )
+            for _, row in frame.iterrows()
+        }
 
     for slug, label in CLIENT_GROUPS:
         group = campaigns[dynamic_groups == slug]
@@ -1380,22 +1644,35 @@ def build_dashboard_table_frame(
             campaign_row["_row_type"] = "campaign"
             output_rows.append(campaign_row)
 
-        if full_scope:
-            official = all_frame[
-                (all_frame.get("row_type", "") == "subtotal")
-                & (all_frame["funnel"].astype(str) == f"TOT {label}")
-            ]
-            if not official.empty:
-                subtotal_row = official.iloc[0].to_dict()
-                subtotal_row["_row_type"] = "subtotal"
-                output_rows.append(subtotal_row)
+        complete = identities(group) == identities(all_campaigns[all_groups == slug])
+        official = all_frame[
+            (all_frame.get("row_type", "") == "subtotal")
+            & (all_frame["funnel"].astype(str) == f"TOT {label}")
+        ]
+        if complete and not official.empty:
+            subtotal_row = official.iloc[0].to_dict()
+        else:
+            static_group = static_frame.reindex(group.index)
+            subtotal_row = {column: None for column in DASHBOARD_TABLE_COLUMNS}
+            subtotal_row.update(
+                _dashboard_aggregate_summary(pd, static_group, group)
+            )
+            subtotal_row["funnel"] = f"TOT {label}"
+        subtotal_row["_row_type"] = "subtotal"
+        output_rows.append(subtotal_row)
 
-    if full_scope:
-        official_total = all_frame[all_frame.get("row_type", "") == "total"]
-        if not official_total.empty:
-            total_row = official_total.iloc[0].to_dict()
-            total_row["_row_type"] = "total"
-            output_rows.append(total_row)
+    complete_total = identities(campaigns) == identities(all_campaigns)
+    official_total = all_frame[all_frame.get("row_type", "") == "total"]
+    if complete_total and not official_total.empty:
+        total_row = official_total.iloc[0].to_dict()
+    else:
+        total_row = {column: None for column in DASHBOARD_TABLE_COLUMNS}
+        total_row.update(
+            _dashboard_aggregate_summary(pd, static_frame, campaigns)
+        )
+        total_row["funnel"] = "TOTALE GENERALE"
+    total_row["_row_type"] = "total"
+    output_rows.append(total_row)
     return pd.DataFrame(output_rows)
 
 
@@ -1659,11 +1936,15 @@ def main() -> None:
         and selected_start == pd.to_datetime(metadata["start_date"]).date()
         and selected_end == pd.to_datetime(metadata["end_date"]).date()
     )
-    lead_metrics = calculate_dashboard_metrics(
-        df if full_scope else filtered, use_official_totals=full_scope
+    dynamic_all = apply_daily_spend_filter(
+        pd, campaign_df, daily_spend, selected_start, selected_end
     )
-    dynamic_filtered = apply_daily_spend_filter(
-        pd, filtered, daily_spend, selected_start, selected_end
+    dynamic_filtered = dynamic_all.reindex(filtered.index)
+    period_df = build_period_report_frame(
+        pd, df, daily_spend, selected_start, selected_end
+    )
+    lead_metrics = calculate_dashboard_metrics(
+        df if full_scope else dynamic_filtered, use_official_totals=full_scope
     )
     spend_metrics = calculate_dashboard_metrics(
         df if full_scope else dynamic_filtered, use_official_totals=full_scope
@@ -1839,8 +2120,8 @@ def main() -> None:
     table_frame = build_dashboard_table_frame(
         pd,
         filtered,
-        df[df["row_type"] == "campaign"] if full_scope else dynamic_filtered,
-        df,
+        period_df[period_df["row_type"] == "campaign"] if full_scope else dynamic_filtered,
+        period_df,
         full_scope=full_scope,
     )
     row_types = table_frame.pop("_row_type")
@@ -1936,7 +2217,7 @@ def main() -> None:
                 width="stretch",
             )
             csv_bytes, csv_filename = build_csv_download(
-                df if full_scope else dynamic_filtered, selected_start, selected_end
+                period_df, selected_start, selected_end
             )
             st.download_button(
                 "Scarica CSV dati",

@@ -15,6 +15,7 @@ from app import (
     build_dashboard_table_frame,
     build_csv_download,
     build_excel_download,
+    build_period_report_frame,
     normalize_period,
     prepare_excel_export_frame,
 )
@@ -298,12 +299,90 @@ class SpendDailyTests(unittest.TestCase):
             date(2026, 7, 2),
             date(2026, 7, 2),
         )
-        self.assertEqual(len(export), 2)
+        self.assertEqual(len(export), 4)
+        self.assertEqual(
+            export["row_type"].tolist(),
+            ["campaign", "campaign", "subtotal", "total"],
+        )
         self.assertEqual(export.attrs["metadata"]["start_date"], "2026-07-02")
         self.assertEqual(export.attrs["metadata"]["end_date"], "2026-07-02")
         self.assertEqual(export["start_date"].unique().tolist(), ["2026-07-02"])
         self.assertEqual(export["end_date"].unique().tolist(), ["2026-07-02"])
-        self.assertEqual(export["speso_effettivo"].tolist(), [20.0, 7.0])
+        self.assertEqual(export.iloc[:2]["speso_effettivo"].tolist(), [20.0, 7.0])
+
+    def test_daily_crm_leads_update_leads_cpl_and_partial_official_rows(self):
+        report = report_rows()
+        report["row_type"] = "campaign"
+        report["stima_lead"] = [310, 62]
+        report["cpl_target"] = [20, 20]
+        daily = daily_rows().copy()
+        daily["excel_row"] = ""
+        daily["leads"] = pd.NA
+        daily["lead_allocation_method"] = ""
+        daily = pd.concat(
+            [
+                daily,
+                pd.DataFrame(
+                    [
+                        {
+                            "date": date(2026, 7, 2), "source": "crm",
+                            "excel_row": "2", "campaign_id": "",
+                            "campaign_name": "Campagna Google", "spend": pd.NA,
+                            "leads": 3, "lead_allocation_method": "crm_mapping",
+                        },
+                        {
+                            "date": date(2026, 7, 2), "source": "crm",
+                            "excel_row": "3", "campaign_id": "",
+                            "campaign_name": "Campagna Meta", "spend": pd.NA,
+                            "leads": 2, "lead_allocation_method": "crm_mapping",
+                        },
+                    ]
+                ),
+            ],
+            ignore_index=True,
+        )
+        period = build_period_report_frame(
+            pd, report, daily, date(2026, 7, 2), date(2026, 7, 2)
+        )
+        campaigns = period[period["row_type"] == "campaign"]
+        self.assertEqual(campaigns["lead_effettive"].tolist(), [3.0, 2.0])
+        self.assertEqual(campaigns["cpl_effettivo"].tolist(), [20 / 3, 3.5])
+        self.assertEqual(
+            period["row_type"].tolist(),
+            ["campaign", "campaign", "subtotal", "total"],
+        )
+        subtotal = period[period["row_type"] == "subtotal"].iloc[0]
+        total = period[period["row_type"] == "total"].iloc[0]
+        self.assertEqual(subtotal["lead_effettive"], 5)
+        self.assertEqual(total["speso_effettivo"], 27)
+
+    def test_area_clienti_is_allocated_after_selected_date_filter(self):
+        report = pd.DataFrame(
+            [
+                {
+                    **report_rows().iloc[0].to_dict(),
+                    "excel_row": row,
+                    "funnel": "Area Clienti",
+                    "campaign_name": f"Area {row}",
+                    "google_campaign_id": str(100 + row),
+                }
+                for row in range(2, 7)
+            ]
+        )
+        daily = pd.DataFrame(
+            [
+                {
+                    "date": date(2026, 7, 2), "source": "crm_area_clienti",
+                    "excel_row": "", "campaign_id": "",
+                    "campaign_name": "AREA CLIENTI", "spend": pd.NA,
+                    "leads": 7, "lead_allocation_method": "area_clienti_uniform",
+                }
+            ]
+        )
+        result = apply_daily_spend_filter(
+            pd, report, daily, date(2026, 7, 2), date(2026, 7, 2)
+        )
+        self.assertEqual(result["lead_effettive"].tolist(), [2, 2, 1, 1, 1])
 
     def test_downloaded_excel_matches_selected_period(self):
         metadata = {
@@ -412,8 +491,29 @@ class SpendDailyTests(unittest.TestCase):
         self.assertEqual(subtotal["stima_spending_progressiva"], 300)
         self.assertEqual(subtotal["speso_effettivo"], 30)
         self.assertEqual(subtotal["lead_effettive"], 10)
-        self.assertEqual(subtotal["cpl_effettivo"], 99.9)
+        self.assertEqual(subtotal["cpl_effettivo"], 3)
         self.assertEqual(total["speso_effettivo"], 30)
+
+    def test_row_type_report_keeps_recalculated_subtotal_with_project_filter(self):
+        report = report_rows()
+        report["row_type"] = "campaign"
+        period = build_period_report_frame(
+            pd, report, daily_rows(), date(2026, 7, 2), date(2026, 7, 2)
+        )
+        selected_static = report.iloc[[0]].copy()
+        selected_dynamic = period[period["row_type"] == "campaign"].iloc[[0]].copy()
+        table = build_dashboard_table_frame(
+            pd,
+            selected_static,
+            selected_dynamic,
+            period,
+            full_scope=False,
+        )
+        self.assertEqual(
+            table["_row_type"].tolist(), ["campaign", "subtotal", "total"]
+        )
+        self.assertEqual(table.iloc[1]["speso_effettivo"], 20)
+        self.assertEqual(table.iloc[2]["speso_effettivo"], 20)
 
     def test_dashboard_table_uses_three_excel_business_subtotals(self):
         rows = report_rows()

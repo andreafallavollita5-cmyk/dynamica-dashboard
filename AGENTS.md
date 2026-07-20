@@ -77,6 +77,7 @@ Committare solo i file necessari alla dashboard:
 
 ```text
 data/report_data.csv
+data/report_daily_metrics.csv
 exports/report_dynamica_updated.xlsx
 data/last_update.json
 ```
@@ -384,6 +385,7 @@ Non ignorare questi file, perché servono a Streamlit:
 
 ```text
 data/report_data.csv
+data/report_daily_metrics.csv
 data/last_update.json
 exports/report_dynamica_updated.xlsx
 ```
@@ -537,6 +539,7 @@ Dopo archivio locale, aggiornare i file latest nella repo:
 
 ```text
 data/report_data.csv
+data/report_daily_metrics.csv
 data/last_update.json
 exports/report_dynamica_updated.xlsx
 ```

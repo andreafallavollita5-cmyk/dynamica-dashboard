@@ -1,4 +1,4 @@
-"""Publish only the three dashboard latest artifacts to the private repository."""
+"""Publish only the dashboard latest artifacts to the private repository."""
 
 from __future__ import annotations
 
@@ -10,6 +10,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 LATEST_FILES = (
     "data/report_data.csv",
+    "data/report_daily_metrics.csv",
     "data/last_update.json",
     "exports/report_dynamica_updated.xlsx",
 )

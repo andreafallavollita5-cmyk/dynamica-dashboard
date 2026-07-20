@@ -24,6 +24,18 @@ if errorlevel 1 (
   exit /b 1
 )
 
+"%PYTHON%" -m src.build_daily_metrics >>logs\daily_update.log 2>&1
+if errorlevel 1 (
+  echo [%date% %time%] Metriche giornaliere dashboard fallite>>logs\daily_update.log
+  exit /b 1
+)
+
+"%PYTHON%" -m src.writeback_google_sheet >>logs\daily_update.log 2>&1
+if errorlevel 1 (
+  echo [%date% %time%] Write-back Google Sheet fallito>>logs\daily_update.log
+  exit /b 1
+)
+
 "%PYTHON%" -m src.update_excel >>logs\daily_update.log 2>&1
 if errorlevel 1 (
   echo [%date% %time%] Export Excel fallito>>logs\daily_update.log

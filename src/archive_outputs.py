@@ -9,6 +9,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 LATEST_FILES = (
     Path("data/report_data.csv"),
+    Path("data/report_daily_metrics.csv"),
     Path("exports/report_dynamica_updated.xlsx"),
     Path("data/last_update.json"),
 )

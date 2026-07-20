@@ -437,7 +437,12 @@ def build_report_rows(
     if not output:
         return output
     if crm_mode:
-        return _append_official_rows(output)
+        return _append_official_rows(
+            output,
+            manual_rows=manual_rows,
+            days_in_month=days_in_month,
+            elapsed_days=elapsed_days,
+        )
 
     totals = {
         **build_official_summaries(manual_rows, output),
@@ -514,13 +519,63 @@ def _summary_row(rows: list[dict], label: str, row_type: str) -> dict:
     }
 
 
-def _append_official_rows(campaign_rows: list[dict]) -> list[dict]:
+def _append_official_rows(
+    campaign_rows: list[dict],
+    *,
+    manual_rows: list[dict] | None = None,
+    days_in_month: int | None = None,
+    elapsed_days: int | None = None,
+) -> list[dict]:
     output = list(campaign_rows)
+    summaries: list[dict] = []
     for slug, label in CLIENT_GROUPS:
         group = [row for row in campaign_rows if client_subtotal_group(row) == slug]
         if group:
-            output.append(_summary_row(group, f"TOT {label}", "subtotal"))
-    output.append(_summary_row(campaign_rows, "TOTALE GENERALE", "total"))
+            summary = _summary_row(group, f"TOT {label}", "subtotal")
+            if slug == "area_clienti" and manual_rows:
+                first = manual_rows[0]
+                lead_target = _number(
+                    first.get("sheet_area_clienti_stima_lead_subtotal")
+                )
+                cpl_target = _number(
+                    first.get("sheet_area_clienti_cpl_target_subtotal")
+                )
+                if lead_target is not None:
+                    summary["stima_lead"] = lead_target
+                    if days_in_month:
+                        summary["stima_lead_giornaliere"] = (
+                            lead_target / days_in_month
+                        )
+                        summary["stima_lead_progressiva"] = (
+                            summary["stima_lead_giornaliere"] * (elapsed_days or 0)
+                        )
+                        if summary.get("lead_effettive") is not None:
+                            summary["delta_lead"] = (
+                                summary["lead_effettive"]
+                                - summary["stima_lead_progressiva"]
+                            )
+                if cpl_target is not None:
+                    summary["cpl_target"] = cpl_target
+                    if summary.get("cpl_effettivo") is not None:
+                        summary["delta_cpl"] = (
+                            summary["cpl_effettivo"] - cpl_target
+                        )
+            summaries.append(summary)
+            output.append(summary)
+    total = _summary_row(campaign_rows, "TOTALE GENERALE", "total")
+    for field in (
+        "stima_lead", "stima_lead_giornaliere", "stima_lead_progressiva"
+    ):
+        values = [summary.get(field) for summary in summaries]
+        if any(value is not None for value in values):
+            total[field] = sum(value or 0 for value in values)
+    if total.get("lead_effettive") is not None and total.get("stima_lead_progressiva") is not None:
+        total["delta_lead"] = total["lead_effettive"] - total["stima_lead_progressiva"]
+    if total.get("investimento_media") is not None and total.get("stima_lead"):
+        total["cpl_target"] = total["investimento_media"] / total["stima_lead"]
+        if total.get("cpl_effettivo") is not None:
+            total["delta_cpl"] = total["cpl_effettivo"] - total["cpl_target"]
+    output.append(total)
     return output
 
 

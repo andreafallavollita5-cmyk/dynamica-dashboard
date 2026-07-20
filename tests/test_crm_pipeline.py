@@ -101,6 +101,28 @@ class CRMMatchingTests(unittest.TestCase):
 
 
 class OfficialReportRowsTests(unittest.TestCase):
+    def test_area_subtotal_plan_is_preserved_in_official_rows(self):
+        plans = [
+            manual(row, f"Area {row}", "Area Clienti", stima_lead=None)
+            for row in range(2, 7)
+        ]
+        plans[0]["sheet_area_clienti_stima_lead_subtotal"] = 467
+        plans[0]["sheet_area_clienti_cpl_target_subtotal"] = 45
+        rows = build_report_rows(
+            plans,
+            [],
+            [],
+            date(2026, 7, 1),
+            date(2026, 7, 17),
+            crm_leads_by_excel_row={row: 1 for row in range(2, 7)},
+        )
+        subtotal = next(row for row in rows if row["row_type"] == "subtotal")
+        total = next(row for row in rows if row["row_type"] == "total")
+        self.assertEqual(subtotal["stima_lead"], 467)
+        self.assertAlmostEqual(subtotal["stima_lead_progressiva"], 467 / 31 * 17)
+        self.assertEqual(subtotal["cpl_target"], 45)
+        self.assertEqual(total["stima_lead"], 467)
+
     def test_dem_spend_and_official_rows_are_not_repeated_on_campaigns(self):
         rows = build_report_rows(
             [
