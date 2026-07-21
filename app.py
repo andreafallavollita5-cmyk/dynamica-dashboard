@@ -2133,11 +2133,11 @@ def main() -> None:
     if cpl_efficiency is None:
         efficiency_color = "#ff8a00"
     elif cpl_efficiency < -0.05:
-        efficiency_color = "#08a642"
+        efficiency_color = "#f20d18"
     elif cpl_efficiency <= 0.05:
         efficiency_color = "#ff8a00"
     else:
-        efficiency_color = "#f20d18"
+        efficiency_color = "#08a642"
 
     middle = st.columns([.92, 1.55, 1.31], gap="medium")
     with middle[0]:
@@ -2184,16 +2184,16 @@ def main() -> None:
               <div class="panel-title">Indice efficienza CPL</div>
               <div class="cpl-gauge" style="--eff-color:{efficiency_color}">
                 <svg viewBox="0 0 220 125" aria-hidden="true">
-                  <path class="cpl-arc" stroke="#08a642" d="M20 105 A90 90 0 0 1 65 27.1"/>
+                  <path class="cpl-arc" stroke="#f20d18" d="M20 105 A90 90 0 0 1 65 27.1"/>
                   <path class="cpl-arc" stroke="#ff9d00" d="M65 27.1 A90 90 0 0 1 155 27.1"/>
-                  <path class="cpl-arc" stroke="#f20d18" d="M155 27.1 A90 90 0 0 1 200 105"/>
+                  <path class="cpl-arc" stroke="#08a642" d="M155 27.1 A90 90 0 0 1 200 105"/>
                   <g transform="translate(0 -18)">
                     <path class="gauge-needle-shape" d="M{efficiency_base_1_x:.1f} {efficiency_base_1_y:.1f} L{efficiency_base_2_x:.1f} {efficiency_base_2_y:.1f} L{efficiency_needle_x:.1f} {efficiency_needle_y:.1f} Z"/>
                     <circle class="gauge-pin cpl-pin" cx="110" cy="105" r="7"/>
                   </g>
                 </svg>
                 <div class="cpl-gauge-value">{percent(cpl_efficiency) if cpl_efficiency is not None else '—'}</div>
-                <div class="eff-note"><span class="legend-dot" style="background:#08a642"></span>verde = meglio del target <span class="legend-dot" style="background:#ff9d00"></span>giallo = in linea <span class="legend-dot" style="background:#f20d18"></span>rosso = sopra target</div>
+                <div class="eff-note"><span class="legend-dot" style="background:#f20d18"></span>rosso = meglio del target <span class="legend-dot" style="background:#ff9d00"></span>giallo = in linea <span class="legend-dot" style="background:#08a642"></span>verde = sopra target</div>
               </div>
             </div>
             """,
