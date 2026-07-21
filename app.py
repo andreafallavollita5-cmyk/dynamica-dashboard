@@ -468,7 +468,20 @@ def apply_style(st) -> None:
           border-color:var(--blue) !important;
           color:var(--blue-strong) !important;
         }
-        body:has(#dashboard-theme[data-theme="dark"]) [data-testid="stDateInput"] [data-baseweb="input"]:after { background-color:#4f5d73; }
+        body:has(#dashboard-theme[data-theme="dark"]) [data-testid="stDateInput"] [data-baseweb="input"]:after {
+          background:#4f5d73 center / 18px 18px no-repeat url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23ffffff' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m7 9 5 5 5-5'/%3E%3C/svg%3E");
+        }
+        body:has(#dashboard-theme[data-theme="dark"]) [data-testid="stForm"]:has([data-testid="stDateInput"]) [data-testid="stFormSubmitButton"] button {
+          background:#00a5b4 !important;
+          border-color:#00a5b4 !important;
+          color:#ffffff !important;
+        }
+        body:has(#dashboard-theme[data-theme="dark"]) [data-testid="stForm"]:has([data-testid="stDateInput"]) [data-testid="stFormSubmitButton"] button:hover,
+        body:has(#dashboard-theme[data-theme="dark"]) [data-testid="stForm"]:has([data-testid="stDateInput"]) [data-testid="stFormSubmitButton"] button:focus-visible {
+          background:#008faa !important;
+          border-color:#39c1cd !important;
+          color:#ffffff !important;
+        }
         body:has(#dashboard-theme[data-theme="dark"]) [data-testid="stColumn"]:has(.filter-card-label) input {
           color:var(--text-main) !important;
         }

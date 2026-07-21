@@ -1,0 +1,518 @@
+# Task Codex — Export Excel cliente dalla dashboard Dynamica Retail
+
+## Obiettivo
+
+Implementare l’export Excel professionale scaricabile dalla dashboard Streamlit, usando come base il file:
+
+```text
+templates/Template_export_cliente_Dynamica.xlsx
+```
+
+Il file finale deve essere un **report snapshot cliente**, coerente con i dati già mostrati dalla dashboard e non un semplice dump CSV.
+
+Non modificare il design della dashboard salvo il collegamento del pulsante di download.
+
+---
+
+## Regola architetturale
+
+La fonte dati dell’export è il DataFrame finale prodotto da:
+
+```text
+src/build_report_data.py
+```
+
+oppure il file:
+
+```text
+data/report_data.csv
+```
+
+Non interrogare Google Ads, Meta Ads o Dynamics direttamente dentro `update_excel.py`.
+
+Flusso corretto:
+
+```text
+API + Google Sheet
+        ↓
+build_report_data.py
+        ↓
+report_data.csv / DataFrame finale
+        ↓
+update_excel.py
+        ↓
+Excel cliente
+        ↓
+pulsante download Streamlit
+```
+
+---
+
+## File da creare o completare
+
+### 1. `src/update_excel.py`
+
+Implementare una funzione pubblica:
+
+```python
+def generate_client_excel(
+    report_df: pandas.DataFrame,
+    template_path: str = "templates/Template_export_cliente_Dynamica.xlsx",
+    output_dir: str = "exports",
+) -> str:
+    """Genera il report Excel cliente e restituisce il path del file creato."""
+```
+
+Aggiungere anche un entry point eseguibile:
+
+```bash
+python -m src.update_excel
+```
+
+Quando eseguito da CLI deve leggere `data/report_data.csv`.
+
+### 2. `app.py`
+
+Collegare il bottone:
+
+```text
+Scarica report completo
+```
+
+al vero file Excel generato.
+
+Il bottone deve scaricare un `.xlsx`, non il CSV rinominato.
+
+---
+
+## Regole del template
+
+Il workbook contiene tre fogli:
+
+```text
+Report Cliente
+Dati
+Config
+```
+
+### `Report Cliente`
+
+È l’unico foglio destinato al cliente.
+
+### `Dati`
+
+Deve contenere il dataset completo usato per generare il report, utile per controllo e audit.
+
+### `Config`
+
+Deve contenere periodo, data di aggiornamento e stato delle fonti.
+
+Nel file finale:
+
+- lasciare visibile solo `Report Cliente`;
+- impostare `Dati` e `Config` come hidden;
+- non eliminare i due fogli tecnici.
+
+---
+
+## Mappatura colonne `Report Cliente`
+
+| Colonna | Campo | Fonte |
+|---|---|---|
+| A | Funnel | `funnel` |
+| B | Piattaforma | `platform` |
+| C | Canale | `channel` |
+| D | ID Campagna | ID Google o Meta; vuoto per DEM |
+| E | Campagna | `campaign_name` |
+| F | Investimento Media | `investimento_media` |
+| G | % | `percentuale_investimento` |
+| H | CPP medio | `cpp_medio` |
+| I | Stima Pratiche | `stima_pratiche` |
+| J | CPL target | `cpl_target` |
+| K | Stima Lead | `stima_lead` |
+| L | Stima lead giornaliera | `stima_lead_giornaliere` |
+| M | Stima lead progressiva | `stima_lead_progressiva` |
+| N | Lead effettive | `lead_effettive` |
+| O | Delta lead | `delta_lead` |
+| P | Stima spending giornaliera | `stima_spending_giornaliera` |
+| Q | Stima spending progressiva | `stima_spending_progressiva` |
+| R | Speso effettivo | `speso_effettivo` |
+| S | Delta speso | `delta_speso` |
+| T | % Delta delivery | `delta_delivery_pct` |
+| U | CPL effettivo | `cpl_effettivo` |
+| V | Delta CPL | `delta_cpl` |
+| W | Action | `action` |
+
+### ID campagna
+
+Usare questa priorità:
+
+```text
+google_campaign_id
+meta_campaign_id
+dynamics_campaign_key
+vuoto
+```
+
+Scrivere gli ID come testo per evitare notazione scientifica.
+
+---
+
+## Convenzioni dei delta
+
+Preservare la convenzione del report attuale:
+
+```text
+Delta lead = stima lead progressiva - lead effettive
+```
+
+Quindi:
+
+- valore negativo = più lead del previsto = positivo;
+- valore positivo = lead sotto obiettivo = negativo.
+
+```text
+Delta speso = speso effettivo - stima spending progressiva
+```
+
+```text
+Delta CPL = CPL effettivo - CPL target
+```
+
+Quindi Delta CPL negativo è migliore del target.
+
+Non invertire i segni senza una decisione esplicita.
+
+---
+
+## Popolamento del report
+
+### Dati e ordinamento
+
+1. filtrare solo righe `enabled=true`, se il campo esiste;
+2. ordinare per:
+   - ordine funnel del DataFrame originale;
+   - piattaforma;
+   - campagna;
+3. non usare `excel_row` come unica logica di posizionamento;
+4. il report deve continuare a funzionare se una campagna viene aggiunta o rimossa.
+
+### Righe dinamiche
+
+Il template contiene spazio iniziale per 30 campagne.
+
+Se le campagne sono più di 30:
+
+- inserire righe prima del totale generale;
+- copiare altezza, bordi, font, number format e allineamento dalla riga dati precedente.
+
+Se sono meno di 30:
+
+- eliminare o nascondere le righe vuote residue prima del totale;
+- il cliente non deve vedere decine di righe bianche.
+
+### Valori, non formule dipendenti da Excel
+
+Il file deve essere uno snapshot affidabile.
+
+Scrivere nel report i valori già calcolati da `report_df`, inclusi delta e CPL.
+
+Non affidarsi alla ricalcolazione di Excel per mostrare i numeri corretti.
+
+Le formule presenti nel template sono solo una base di sviluppo e possono essere sostituite dai valori finali.
+
+---
+
+## Subtotali per funnel
+
+Dopo ogni gruppo funnel inserire una riga subtotale.
+
+Esempi:
+
+```text
+TOT Area Clienti
+TOT Lead Veloce
+TOT DEM
+```
+
+Stile subtotale:
+
+- riempimento azzurro molto chiaro `DCE6F1`;
+- testo bold;
+- bordo superiore più marcato;
+- celle numeriche aggregate;
+- colonna A con `TOT {funnel}`;
+- unire A:E nella riga subtotale.
+
+Calcolare i subtotali in Python sul gruppo, non con riferimenti fragili a righe hardcoded.
+
+Per le metriche aggregate:
+
+- investimento: somma;
+- percentuale: somma;
+- stima pratiche: somma;
+- stima lead: somma;
+- lead effettive: somma;
+- stima spending: somma;
+- speso effettivo: somma;
+- delta lead: somma;
+- delta speso: somma;
+- `% Delta delivery = delta speso totale / stima spending totale`;
+- `CPL target = investimento totale / stima lead totale`;
+- `CPL effettivo = speso totale / lead effettive totali`;
+- `Delta CPL = CPL effettivo - CPL target`.
+
+Gestire divisioni per zero restituendo cella vuota.
+
+---
+
+## Totale generale
+
+Dopo l’ultimo subtotale creare la riga:
+
+```text
+TOTALE GENERALE
+```
+
+Stile:
+
+- sfondo nero;
+- testo bianco bold;
+- unire A:E;
+- numeri aggregati con le stesse regole dei subtotali.
+
+Il totale deve essere calcolato dal DataFrame completo e non sommando i subtotali visivamente.
+
+---
+
+## Config sheet
+
+Compilare:
+
+```text
+B2 = client_name
+B3 = start_date
+B4 = end_date
+B5 = days_in_month
+B6 = elapsed_days
+B7 = updated_at
+B8 = source_status
+```
+
+Usare vere date Excel per B3, B4 e B7.
+
+`source_status` deve essere:
+
+```text
+success
+partial
+mock
+error
+```
+
+Per il report cliente di produzione non accettare `mock` silenziosamente.
+
+Se `source_status=mock`, aggiungere nel titolo o nel sottotitolo una dicitura evidente:
+
+```text
+DATI DEMO — NON INVIARE AL CLIENTE
+```
+
+---
+
+## Foglio `Dati`
+
+1. cancellare i dati precedenti lasciando la riga header;
+2. scrivere tutte le righe del DataFrame finale;
+3. mantenere gli ID come testo;
+4. formattare date e importi;
+5. aggiungere autofilter;
+6. impostare il foglio hidden nel file finale.
+
+Non usare `pandas.DataFrame.to_excel()` sul foglio `Report Cliente`, perché può distruggere formattazione, merge e larghezze.
+
+Può essere usato sul foglio `Dati` solo se non altera il resto del workbook; preferire comunque la scrittura tramite openpyxl.
+
+---
+
+## Formattazione obbligatoria
+
+### Importi
+
+Usare formato italiano:
+
+```text
+#,##0.00 €
+```
+
+Applicare a:
+
+```text
+F, H, J, P, Q, R, S, U, V
+```
+
+### Percentuali
+
+Usare:
+
+```text
+0.0%
+```
+
+Applicare a:
+
+```text
+G, T
+```
+
+### Numeri lead/pratiche
+
+Usare massimo una cifra decimale:
+
+```text
+0.0
+```
+
+### Action
+
+- testo a capo;
+- allineamento verticale alto;
+- larghezza sufficiente;
+- nessun taglio del contenuto.
+
+### Colori semaforici
+
+Preservare o ricreare:
+
+- Delta lead negativo: verde;
+- Delta lead positivo: rosso;
+- % Delta delivery molto negativa: rosso;
+- % Delta delivery vicino allo zero: giallo;
+- % Delta delivery positiva: verde;
+- Delta CPL negativo: verde;
+- Delta CPL positivo: arancione/rosso.
+
+Applicare formattazione condizionale anche alle righe inserite dinamicamente.
+
+---
+
+## Impostazioni di stampa
+
+Nel foglio `Report Cliente`:
+
+- orientamento landscape;
+- fit to width = 1 pagina;
+- margini stretti;
+- ripetere la riga header 4 su ogni pagina;
+- area di stampa dalla colonna A alla W e fino al totale generale;
+- centrare orizzontalmente;
+- nascondere gridlines;
+- freeze panes su `F5`.
+
+---
+
+## Nome file
+
+Usare:
+
+```text
+Report_Dynamica_YYYY-MM-DD.xlsx
+```
+
+La data è `end_date` del report.
+
+Salvare anche/copiarne l’ultima versione in:
+
+```text
+exports/report_dynamica_updated.xlsx
+```
+
+per mantenere compatibilità con il resto del progetto.
+
+---
+
+## Integrazione Streamlit
+
+Nel pulsante download:
+
+1. controllare se l’Excel latest esiste;
+2. se manca, generarlo dal DataFrame attuale;
+3. aprire il file in modalità binaria;
+4. usare MIME:
+
+```text
+application/vnd.openxmlformats-officedocument.spreadsheetml.sheet
+```
+
+5. usare nome download dinamico;
+6. mostrare un errore semplice se la generazione fallisce;
+7. non mostrare stacktrace o path locali al cliente.
+
+---
+
+## Sicurezza e qualità dati
+
+- non inserire token, secret o percorsi locali nell’Excel;
+- non esportare raw token o configurazioni;
+- non usare dati mock senza avviso;
+- non lasciare dati del report precedente nelle righe non sovrascritte;
+- il template deve essere copiato in un nuovo file: non modificare l’originale;
+- usare scrittura atomica: creare file temporaneo e rinominare solo a generazione completata;
+- se la generazione fallisce, mantenere intatto l’ultimo Excel valido.
+
+---
+
+## Test richiesti
+
+Creare test per almeno questi casi:
+
+1. DataFrame con campagne Google, Meta e DEM.
+2. Una campagna senza lead effettive.
+3. Divisione per zero su CPL.
+4. Più di 30 campagne.
+5. Meno di 30 campagne senza righe vuote visibili.
+6. Funnel singolo.
+7. Più funnel con subtotali.
+8. ID campagna lungo mantenuto come testo.
+9. Action vuota e Action lunga.
+10. `source_status=mock` con avviso visibile.
+11. Workbook generato apribile senza errore.
+12. Fogli `Dati` e `Config` hidden.
+13. Nessun valore del report precedente rimasto nel nuovo file.
+
+Aggiungere una validazione finale che riapra il file generato con openpyxl e controlli:
+
+- nomi fogli;
+- visibilità fogli;
+- presenza del totale generale;
+- data periodo;
+- numero righe campagne;
+- presenza del bottone Streamlit collegato al file Excel.
+
+---
+
+## Vincoli
+
+- usare `openpyxl` per preservare la formattazione del template;
+- non ricreare il workbook da zero ad ogni export;
+- non modificare il template originale;
+- non usare righe hardcoded come unica fonte di verità;
+- non usare conversioni Google o lead Meta come lead effettive;
+- non modificare la colonna Action;
+- non cambiare le regole di calcolo già stabilite.
+
+---
+
+## Output atteso della task
+
+Al termine mostrare:
+
+1. file modificati;
+2. comando di test eseguito;
+3. path dell’Excel di prova;
+4. numero campagne esportate;
+5. numero subtotali creati;
+6. stato `success/partial/mock`;
+7. conferma che `app.py` scarica un vero `.xlsx`.
+
+Non dichiarare completato il task se il file Excel non viene effettivamente generato e riaperto durante il test.
