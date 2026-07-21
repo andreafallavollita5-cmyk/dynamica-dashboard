@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 import json
+import os
 import shutil
 from pathlib import Path
+
+from dotenv import load_dotenv
 
 ROOT = Path(__file__).resolve().parents[1]
 LATEST_FILES = (
@@ -37,8 +40,13 @@ def archive_latest_outputs(archive_root: Path = Path("archive")) -> Path:
 
 
 def main() -> int:
+    load_dotenv(ROOT / ".env", encoding="utf-8-sig")
+    if os.getenv("LOCAL_ARCHIVE_ENABLED", "true").strip().casefold() != "true":
+        print("Archivio locale disattivato.")
+        return 0
+    archive_root = Path(os.getenv("LOCAL_ARCHIVE_DIR", "archive").strip() or "archive")
     try:
-        destination = archive_latest_outputs()
+        destination = archive_latest_outputs(archive_root)
     except Exception as exc:
         print(f"Errore archivio locale: {exc}")
         return 1

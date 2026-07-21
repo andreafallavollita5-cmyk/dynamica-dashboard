@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 import argparse
-import os
 from datetime import date
 from pathlib import Path
 
 import pandas as pd
 
+from src.config import load_settings
 from src.crm_excel_client import read_crm_export
+from src.crm_export_selector import select_crm_export
 from src.crm_lead_matcher import match_crm_leads
 from src.google_sheets_client import (
     fetch_crm_mapping_from_google_sheet,
@@ -37,6 +38,28 @@ DAILY_METRIC_COLUMNS = (
 
 class DailyMetricsError(RuntimeError):
     """Raised when daily aggregates cannot be built safely."""
+
+
+def _read_crm_audit(path: Path, start: date, end: date) -> list[dict]:
+    if not path.exists():
+        raise DailyMetricsError("Audit Dynamics locale non disponibile.")
+    frame = pd.read_csv(path, dtype=str, keep_default_na=False)
+    required = {
+        "lead_id", "campaign_crm", "utm_campaign", "created_at",
+        "match_status", "matched_excel_row", "lead_allocation_method",
+    }
+    if not required.issubset(frame.columns):
+        raise DailyMetricsError("Audit Dynamics locale non valido.")
+    try:
+        created = frame["created_at"].map(pd.Timestamp)
+    except (TypeError, ValueError) as exc:
+        raise DailyMetricsError("Audit Dynamics con date non valide.") from exc
+    if created.map(pd.isna).any():
+        raise DailyMetricsError("Audit Dynamics con date non valide.")
+    local_dates = created.map(lambda value: value.date())
+    frame = frame[(local_dates >= start) & (local_dates <= end)].copy()
+    frame["created_at"] = created.loc[frame.index]
+    return frame.to_dict("records")
 
 
 def _clean_id(value: object) -> str:
@@ -201,6 +224,7 @@ def build_daily_metrics(
     spend_path: Path = SPEND_PATH,
     output_path: Path = OUTPUT_PATH,
     crm_export_path: str | Path | None = None,
+    crm_audit_path: str | Path | None = None,
     mapping_fetcher=fetch_crm_mapping_from_google_sheet,
     manual_fetcher=fetch_manual_inputs,
 ) -> Path:
@@ -214,18 +238,23 @@ def build_daily_metrics(
     ends = pd.to_datetime(report["end_date"], errors="raise").dt.date.unique()
     if len(starts) != 1 or len(ends) != 1:
         raise DailyMetricsError("Periodo report non univoco.")
-    crm_path = Path(
-        crm_export_path
-        or os.getenv("CRM_EXPORT_PATH", "").strip()
-        or ROOT / "data/input/LEAD QUESTO MESE PULITE 18-07-2026 11-09-08.xlsx"
-    )
-    if not crm_path.is_absolute():
-        crm_path = ROOT / crm_path
-    leads = read_crm_export(crm_path, starts[0], ends[0])
     manual_rows = manual_fetcher()
-    _allocations, _methods, normalized = match_crm_leads(
-        leads, manual_rows, mapping_fetcher()
-    )
+    crm_available = True
+    try:
+        if load_settings().dynamics_enabled and crm_export_path is None:
+            audit_path = Path(crm_audit_path or ROOT / "data/raw/dynamics_raw.csv")
+            if not audit_path.is_absolute():
+                audit_path = ROOT / audit_path
+            normalized = _read_crm_audit(audit_path, starts[0], ends[0])
+        else:
+            selection = select_crm_export(ends[0], explicit_path=crm_export_path)
+            leads = read_crm_export(selection.path, starts[0], ends[0])
+            _allocations, _methods, normalized = match_crm_leads(
+                leads, manual_rows, mapping_fetcher()
+            )
+    except Exception:
+        crm_available = False
+        normalized = []
     planning_targets: dict[str, float] = {}
     if manual_rows:
         first = manual_rows[0]
@@ -240,6 +269,21 @@ def build_daily_metrics(
     rows = build_daily_metric_rows(
         report, spend, normalized, planning_targets=planning_targets
     )
+    if not crm_available and output_path.exists():
+        previous = pd.read_csv(output_path, dtype=str, keep_default_na=False)
+        retained = previous[
+            previous["source"].isin(["crm", "crm_area_clienti"])
+            & (previous["date"] >= starts[0].isoformat())
+            & (previous["date"] <= ends[0].isoformat())
+        ]
+        rows.extend(retained.to_dict("records"))
+        rows.sort(
+            key=lambda row: (
+                str(row.get("date") or ""),
+                str(row.get("source") or ""),
+                str(row.get("excel_row") or ""),
+            )
+        )
     output_path.parent.mkdir(parents=True, exist_ok=True)
     pd.DataFrame(rows, columns=DAILY_METRIC_COLUMNS).to_csv(
         output_path, index=False, encoding="utf-8-sig"

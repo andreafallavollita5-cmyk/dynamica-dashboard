@@ -333,7 +333,7 @@ class ClientExcelExportTests(unittest.TestCase):
 
     def test_dashboard_table_has_excel_style_section_borders(self):
         source = (ROOT / "app.py").read_text(encoding="utf-8")
-        self.assertIn("--table-section-border: #000000", source)
+        self.assertIn("--table-section-border: #3a4454", source)
         self.assertIn("--table-section-border: #ffffff", source)
         for column in (4, 7, 10):
             self.assertIn(f".campaign-table th:nth-child({column})", source)

@@ -5,9 +5,9 @@ from __future__ import annotations
 import argparse
 import calendar
 import csv
+import hashlib
 import json
 import math
-import os
 from collections.abc import Callable
 from datetime import date, datetime
 from pathlib import Path
@@ -15,9 +15,11 @@ from zoneinfo import ZoneInfo
 
 from src.ads_verification import fetch_delivery_with_status
 from src.config import load_settings
+from src.crm_export_selector import select_crm_export
 from src.crm_excel_client import read_crm_export
 from src.crm_lead_matcher import match_crm_leads
 from src.dates import current_month_until_yesterday
+from src.dynamics_client import fetch_effective_leads
 from src.google_ads_client import fetch_google_campaign_delivery
 from src.google_sheets_client import (
     fetch_crm_mapping_from_google_sheet,
@@ -47,6 +49,7 @@ DELIVERY_COLUMNS = [
 ManualFetcher = Callable[[], list[dict]]
 DeliveryFetcher = Callable[[str, str], list[dict]]
 MappingFetcher = Callable[[], list[dict]]
+CRMFetcher = Callable[[str, str], list[dict]]
 
 
 def _number(value: object) -> float | None:
@@ -171,7 +174,7 @@ def _match_spend(
     platform_key: str,
     connection_status: str,
 ) -> tuple[float | None, str]:
-    if connection_status != "ok":
+    if connection_status == "error":
         return None, f"{platform_key}:error"
 
     by_id, by_name = _index_delivery(api_rows)
@@ -179,15 +182,21 @@ def _match_spend(
     if campaign_id:
         match = by_id.get(campaign_id)
         if match is None:
+            if connection_status == "stale":
+                return None, f"{platform_key}:stale_missing"
             return 0.0, f"{platform_key}:no_delivery"
-        return float(match.get("spend") or 0), f"{platform_key}:ok"
+        suffix = "stale" if connection_status == "stale" else "ok"
+        return float(match.get("spend") or 0), f"{platform_key}:{suffix}"
 
     campaign_name = str(manual.get("campaign_name") or "").strip()
     name_matches = by_name.get(campaign_name.casefold(), [])
     if len(name_matches) == 1:
-        return float(name_matches[0].get("spend") or 0), f"{platform_key}:ok_name_fallback"
+        suffix = "stale_name_fallback" if connection_status == "stale" else "ok_name_fallback"
+        return float(name_matches[0].get("spend") or 0), f"{platform_key}:{suffix}"
     if len(name_matches) > 1:
         return None, f"{platform_key}:ambiguous_name"
+    if connection_status == "stale":
+        return None, f"{platform_key}:stale_missing"
     return 0.0, f"{platform_key}:no_delivery_name"
 
 
@@ -240,7 +249,7 @@ def _resolve_ads_spend(
             source_parts.append(source)
             if spend is not None:
                 spend_parts.append(spend)
-        failed = any(statuses[key] != "ok" for key, _ in platforms)
+        failed = any(statuses[key] == "error" for key, _ in platforms)
         failures.append(failed)
         spends.append(None if failed else (sum(spend_parts) if platforms else None))
         sources.append(source_parts)
@@ -310,7 +319,7 @@ def build_report_rows(
         stima_lead = _number(manual.get("stima_lead"))
         excel_row = int(manual.get("excel_row") or 0)
         lead_effettive = (
-            float(crm_leads_by_excel_row.get(excel_row, 0))
+            _number(crm_leads_by_excel_row.get(excel_row, 0))
             if crm_mode
             else _number(manual.get("lead_effettive_manual"))
         )
@@ -415,19 +424,9 @@ def build_report_rows(
                 "meta_campaign_id": str(manual.get("meta_campaign_id") or ""),
                 "dynamics_campaign_key": str(manual.get("dynamics_campaign_key") or ""),
                 "source_status": (
-                    (
-                        "error"
-                        if connection_failures[index]
-                        else "manual"
-                        if (
-                            client_subtotal_group(manual) == "dem"
-                            or lead_allocation_methods.get(excel_row)
-                            == "area_clienti_uniform"
-                        )
-                        else "success"
-                    )
-                    if crm_mode
-                    else ";".join(source_parts) if source_parts else "manual:no_ads_source"
+                    ";".join(source_parts)
+                    if source_parts
+                    else "manual:no_ads_source"
                 ),
                 "lead_allocation_method": lead_allocation_methods.get(
                     excel_row, "crm_mapping"
@@ -587,6 +586,73 @@ def _write_csv(path: Path, rows: list[dict], columns: list[str]) -> None:
         writer.writerows(rows)
 
 
+def _pseudonymized_crm_audit(rows: list[dict]) -> list[dict]:
+    """Remove the Dataverse GUID while preserving deterministic local auditability."""
+    audit: list[dict] = []
+    for row in rows:
+        item = dict(row)
+        lead_id = str(item.get("lead_id") or "")
+        item["lead_id"] = hashlib.sha256(
+            f"dynamica-retail:{lead_id}".encode("utf-8")
+        ).hexdigest()
+        audit.append(item)
+    return audit
+
+
+def _previous_campaign_rows(path: Path, start_date: date) -> list[dict]:
+    """Read only campaign rows from the latest file for the same month."""
+    if not path.exists():
+        return []
+    try:
+        with path.open("r", newline="", encoding="utf-8-sig") as stream:
+            rows = list(csv.DictReader(stream))
+    except (OSError, csv.Error):
+        return []
+    return [
+        row
+        for row in rows
+        if str(row.get("row_type") or "campaign") == "campaign"
+        and str(row.get("start_date") or "") == start_date.isoformat()
+    ]
+
+
+def _previous_delivery(rows: list[dict], platform: str) -> list[dict]:
+    id_column = f"{platform}_campaign_id"
+    delivery: list[dict] = []
+    for row in rows:
+        campaign_id = str(row.get(id_column) or "").strip()
+        spend = _number(row.get("speso_effettivo"))
+        if not campaign_id or spend is None:
+            continue
+        delivery.append(
+            {
+                "campaign_id": campaign_id,
+                "campaign_name": str(row.get("campaign_name") or ""),
+                "spend": spend,
+                "clicks": None,
+                "impressions": None,
+            }
+        )
+    return delivery
+
+
+def _previous_crm_allocations(
+    previous_rows: list[dict], manual_rows: list[dict]
+) -> tuple[dict[int, float | None], dict[int, str]]:
+    previous_by_row = {
+        int(row["excel_row"]): _number(row.get("lead_effettive"))
+        for row in previous_rows
+        if str(row.get("excel_row") or "").strip().isdigit()
+    }
+    allocations: dict[int, float | None] = {}
+    methods: dict[int, str] = {}
+    for manual in manual_rows:
+        excel_row = int(manual.get("excel_row") or 0)
+        allocations[excel_row] = previous_by_row.get(excel_row)
+        methods[excel_row] = "crm_stale"
+    return allocations, methods
+
+
 def build_report_data(
     output_path: Path = Path("data/report_data.csv"),
     today: date | None = None,
@@ -597,6 +663,7 @@ def build_report_data(
     mapping_fetcher: MappingFetcher | None = None,
     google_fetcher: DeliveryFetcher | None = None,
     meta_fetcher: DeliveryFetcher | None = None,
+    crm_fetcher: CRMFetcher | None = None,
 ) -> Path:
     """Run the read-only sources and generate CSV plus safe update metadata."""
     today = today or date.today()
@@ -605,8 +672,16 @@ def build_report_data(
     end = end_date or default_end
     if start > end or start.year != end.year or start.month != end.month:
         raise RuntimeError("Periodo report non valido.")
+    output_path = output_path if output_path.is_absolute() else ROOT / output_path
+    previous_rows = _previous_campaign_rows(output_path, start)
+    settings = load_settings()
+    dynamics_mode = (settings.dynamics_enabled or crm_fetcher is not None) and (
+        crm_export_path is None
+    )
     crm_enabled = (
-        manual_fetcher is None
+        dynamics_mode
+        or crm_fetcher is not None
+        or manual_fetcher is None
         or mapping_fetcher is not None
         or crm_export_path is not None
     )
@@ -616,39 +691,63 @@ def build_report_data(
     meta_fetcher = meta_fetcher or fetch_meta_campaign_delivery
 
     manual_rows = manual_fetcher()
-    crm_allocations: dict[int, int] | None = None
+    crm_allocations: dict[int, float | None] | None = None
     allocation_methods: dict[int, str] | None = None
     crm_normalized: list[dict] = []
+    crm_status = "disabled"
+    crm_error: str | None = None
+    crm_file: str | None = None
+    crm_source: str | None = None
+    crm_fetch_succeeded = False
     if crm_enabled:
-        mapping_rows = mapping_fetcher()
-        crm_path = Path(
-            crm_export_path
-            or os.getenv("CRM_EXPORT_PATH", "").strip()
-            or ROOT / "data/input/LEAD QUESTO MESE PULITE 18-07-2026 11-09-08.xlsx"
-        )
-        if not crm_path.is_absolute():
-            crm_path = ROOT / crm_path
-        crm_leads = read_crm_export(crm_path, start, end)
-        crm_allocations, allocation_methods, crm_normalized = match_crm_leads(
-            crm_leads, manual_rows, mapping_rows
-        )
+        try:
+            if dynamics_mode:
+                crm_leads = (crm_fetcher or fetch_effective_leads)(
+                    start.isoformat(), end.isoformat()
+                )
+                crm_status = "ok"
+                crm_source = "dynamics"
+            else:
+                selection = select_crm_export(end, explicit_path=crm_export_path)
+                crm_leads = read_crm_export(selection.path, start, end)
+                crm_file = selection.path.name
+                crm_status = "stale" if selection.is_stale else "ok"
+                crm_source = "excel"
+                if selection.is_stale:
+                    crm_error = (
+                        "Export CRM non aggiornato fino alla data finale del report."
+                    )
+            mapping_rows = mapping_fetcher()
+            crm_allocations, allocation_methods, crm_normalized = match_crm_leads(
+                crm_leads, manual_rows, mapping_rows
+            )
+            crm_fetch_succeeded = True
+        except Exception:
+            crm_allocations, allocation_methods = _previous_crm_allocations(
+                previous_rows, manual_rows
+            )
+            crm_status = "stale" if previous_rows else "unavailable"
+            source_label = "Dynamics" if dynamics_mode else "Export CRM"
+            crm_error = (
+                f"{source_label} non disponibile; lead precedenti mantenute quando presenti."
+            )
     google_rows, google_verification, google_status, google_error = fetch_delivery_with_status(
         "Google Ads", google_fetcher, start.isoformat(), end.isoformat()
     )
     meta_rows, meta_verification, meta_status, meta_error = fetch_delivery_with_status(
         "Meta Ads", meta_fetcher, start.isoformat(), end.isoformat()
     )
-    output_path = output_path if output_path.is_absolute() else ROOT / output_path
     _write_csv(ROOT / "data/raw/google_ads_raw.csv", google_rows, DELIVERY_COLUMNS)
     _write_csv(ROOT / "data/raw/meta_ads_raw.csv", meta_rows, DELIVERY_COLUMNS)
-    _write_csv(
-        ROOT / "data/raw/dynamics_raw.csv",
-        crm_normalized,
-        [
-            "lead_id", "campaign_crm", "utm_campaign", "created_at",
-            "match_status", "matched_excel_row", "lead_allocation_method",
-        ],
-    )
+    if crm_fetch_succeeded:
+        _write_csv(
+            ROOT / "data/raw/dynamics_raw.csv",
+            _pseudonymized_crm_audit(crm_normalized),
+            [
+                "lead_id", "campaign_crm", "utm_campaign", "created_at",
+                "match_status", "matched_excel_row", "lead_allocation_method",
+            ],
+        )
     verification_rows = google_verification + meta_verification
     _write_csv(
         ROOT / "data/raw/ads_delivery_verification.csv",
@@ -657,13 +756,23 @@ def build_report_data(
          "speso_estratto", "stato_collegamento", "errore"],
     )
 
-    settings = load_settings()
-    errors = [error for error in (google_error, meta_error) if error]
-    if errors:
+    if google_status == "error" and meta_status == "error":
         raise RuntimeError(
-            "Aggiornamento interrotto: i collegamenti Ads non sono tutti disponibili. "
+            "Aggiornamento interrotto: entrambi i collegamenti Ads non sono disponibili. "
             "I file latest precedenti sono rimasti invariati."
         )
+
+    source_messages: list[str] = []
+    if google_status == "error":
+        google_rows = _previous_delivery(previous_rows, "google")
+        google_status = "stale" if google_rows else "error"
+        source_messages.append("Google Ads non aggiornato.")
+    if meta_status == "error":
+        meta_rows = _previous_delivery(previous_rows, "meta")
+        meta_status = "stale" if meta_rows else "error"
+        source_messages.append("Meta Ads non aggiornato.")
+    if crm_error:
+        source_messages.append(crm_error)
 
     rows = build_report_rows(
         manual_rows, google_rows, meta_rows, start, end,
@@ -671,14 +780,29 @@ def build_report_data(
         crm_leads_by_excel_row=crm_allocations,
         lead_allocation_methods=allocation_methods,
     )
+    if crm_status in {"stale", "unavailable"}:
+        for row in rows:
+            current = str(row.get("source_status") or "").strip()
+            row["source_status"] = ";".join(
+                part for part in (current, f"crm:{crm_status}") if part
+            )
     _write_csv(output_path, rows, REPORT_COLUMNS)
     metadata = {
         "client": settings.client_name,
         "start_date": start.isoformat(),
         "end_date": end.isoformat(),
         "updated_at": datetime.now(ZoneInfo(settings.timezone)).isoformat(timespec="seconds"),
-        "status": "success",
+        "status": "partial" if source_messages else "success",
+        "sources": {
+            "google_ads": google_status,
+            "meta_ads": meta_status,
+            "crm": crm_status,
+        },
+        "crm_source": crm_source,
+        "crm_file": crm_file,
     }
+    if source_messages:
+        metadata["error"] = " ".join(source_messages)
     metadata_path = ROOT / "data/last_update.json"
     metadata_path.write_text(
         json.dumps(metadata, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"

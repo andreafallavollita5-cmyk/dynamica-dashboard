@@ -7,6 +7,8 @@ import subprocess
 from datetime import datetime
 from pathlib import Path
 
+from dotenv import load_dotenv
+
 ROOT = Path(__file__).resolve().parents[1]
 LATEST_FILES = (
     "data/report_data.csv",
@@ -27,6 +29,7 @@ def publish_latest_files(commit_message: str | None = None) -> bool:
 
     Returns False when publishing is disabled or the latest files are unchanged.
     """
+    load_dotenv(ROOT / ".env", encoding="utf-8-sig")
     if os.getenv("GITHUB_PUBLISH_ENABLED", "false").strip().casefold() != "true":
         return False
     missing = [path for path in LATEST_FILES if not (ROOT / path).exists()]

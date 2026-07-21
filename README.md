@@ -14,6 +14,84 @@ Lo speso viene associato prima tramite `google_campaign_id` o
 presente. Conversioni Google e azioni/lead Meta non vengono richieste né usate
 come lead effettive.
 
+## Automazione giornaliera
+
+La routine completa si avvia con:
+
+```powershell
+.\run_daily_update.bat
+```
+
+Ogni mattina usa Dynamics quando `DYNAMICS_ENABLED=true`; finché il flag resta
+`false`, usa il file Excel CRM valido più recente presente in `data/input/`
+(i file temporanei `~$` vengono ignorati). Aggiorna Google Sheet,
+CSV, Excel e archivio, quindi pubblica su GitHub soltanto i quattro file latest.
+Il giorno 1 elabora il mese precedente completo. Se una sola API Ads non è
+disponibile, mantiene l'ultimo valore valido dello stesso mese e segnala
+l'aggiornamento parziale; se falliscono entrambe, i latest restano invariati.
+
+Per installare o aggiornare l'attività Windows delle 07:00, aprire PowerShell
+come amministratore ed eseguire:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\install_daily_task.ps1
+```
+
+Windows richiede la password dell'account in una finestra protetta; la password
+non viene scritta nei file. L'attività recupera gli avvii saltati, può riattivare
+il PC e ritenta tre volte in caso di errore.
+
+## Dynamics 365 / Dataverse
+
+L'integrazione usa in sola lettura la system view **LEAD QUESTO MESE PULITE**
+(`13950fd2-5fae-ef11-b8e9-000d3a2aa135`). I filtri della vista vengono
+conservati, ma la query restituisce soltanto ID lead, data creazione, Campagna e
+UTM campaign. Nomi, email e telefoni non vengono richiesti.
+
+La registrazione Entra configurata è:
+
+```text
+Tenant ID: 958e2a97-c0ab-4216-9685-ca29d4b59bd1
+Client ID: 341c89da-84eb-49cd-a69d-85ce9c3979a8
+Environment: https://dynamicaretail.crm4.dynamics.com
+```
+
+Prima del collegamento, in Power Platform Admin Center aggiungere questa app
+come **Application User** nell'ambiente Dynamica Retail e assegnarle un ruolo
+dedicato con sola lettura a livello organizzazione su Lead, viste e sulle
+eventuali tabelle collegate dalla vista. Non assegnare permessi di creazione,
+modifica o cancellazione.
+
+Copiare `.env.example` nel `.env` locale e impostare soltanto sul PC aziendale:
+
+```text
+DYNAMICS_CLIENT_SECRET=<valore del secret esistente>
+DYNAMICS_ENABLED=false
+```
+
+Il portale Entra mostra l'esistenza del secret ma non permette di recuperarne
+nuovamente il valore: se non è stato conservato, crearne uno nuovo e copiarlo
+subito nel `.env`.
+
+Non inviare il secret in chat e non commetterlo. Se il riconoscimento automatico
+dei due campi personalizzati non è univoco, il controllo restituisce i nomi delle
+variabili da valorizzare: `DYNAMICS_CAMPAIGN_FIELD` e
+`DYNAMICS_UTM_CAMPAIGN_FIELD`.
+
+Con il flag ancora disattivato, confrontare API ed export sulla stessa data:
+
+```powershell
+.\.venv\Scripts\python.exe -m src.validate_dynamics --end-date 2026-07-20
+```
+
+Il comando non pubblica né modifica i latest. Attivare `DYNAMICS_ENABLED=true`
+solo quando totale, allocazioni, unmatched e ambiguous coincidono esattamente.
+In produzione un errore Dynamics conserva le ultime lead valide e marca il
+report come `partial`/`crm:stale`.
+
+Il file locale `data/raw/dynamics_raw.csv` contiene soltanto l'ID trasformato in
+hash, Campagna, UTM, data e risultato del matching. È escluso da GitHub.
+
 ## Write-back Google Sheet
 
 Dopo la generazione di `data/report_data.csv`, la pipeline aggiorna il

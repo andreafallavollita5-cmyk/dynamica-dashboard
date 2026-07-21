@@ -4,6 +4,12 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
+from pathlib import Path
+
+from dotenv import load_dotenv
+
+
+ROOT = Path(__file__).resolve().parents[1]
 
 
 @dataclass(frozen=True)
@@ -17,7 +23,8 @@ class Settings:
 
 
 def load_settings() -> Settings:
-    """Load basic settings without reading secrets or calling external services."""
+    """Load basic settings without calling external services."""
+    load_dotenv(ROOT / ".env", encoding="utf-8-sig")
     return Settings(
         client_name=os.getenv("CLIENT_NAME", "Dynamica Retail"),
         timezone=os.getenv("TIMEZONE", "Europe/Rome"),

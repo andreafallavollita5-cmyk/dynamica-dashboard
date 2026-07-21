@@ -51,7 +51,7 @@ EXCLUDED_CAMPAIGN_NAMES = {
 EXCLUDED_CAMPAIGN_IDS = {"6936446163375"}
 
 SVG_ICONS = {
-    "logo": '<svg viewBox="0 0 48 48" aria-hidden="true"><path fill="#16d8ee" d="M24 2 45 13 24 25 3 13Z"/><path fill="#0ca9ef" d="M3 13 24 25v21L3 35Z"/><path fill="#22cf71" d="M45 13 24 25v21l21-11Z"/><path fill="none" stroke="#fff" stroke-width="3" stroke-linejoin="round" d="M24 2 45 13v22L24 46 3 35V13Zm0 23v21m0-21L3 13m21 12 21-12"/></svg>',
+    "logo": '<svg viewBox="0 0 48 48" aria-hidden="true"><path fill="#00a5b4" d="M24 2 45 13 24 25 3 13Z"/><path fill="#008faa" d="M3 13 24 25v21L3 35Z"/><path fill="#4f5d73" d="M45 13 24 25v21l21-11Z"/><path fill="none" stroke="#fff" stroke-width="3" stroke-linejoin="round" d="M24 2 45 13v22L24 46 3 35V13Zm0 23v21m0-21L3 13m21 12 21-12"/></svg>',
     "dashboard": '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 8 4.5v9L12 21l-8-4.5v-9Z"/><path d="m4 7.5 8 4.5 8-4.5M12 12v9"/></svg>',
     "chart": '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20V10m6 10V4m6 16v-7m4 7H2"/></svg>',
     "channels": '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19V9m8 10V5m8 14v-7"/><circle cx="4" cy="7" r="2"/><circle cx="12" cy="3" r="2"/><circle cx="20" cy="10" r="2"/></svg>',
@@ -128,50 +128,56 @@ def apply_style(st) -> None:
     st.markdown(
         """
         <style>
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=Work+Sans:wght@400;500;600;700&display=swap');
         :root {
-          --blue: #0828f7;
-          --blue-strong: #001fd7;
-          --cyan: #0cb6f4;
+          --blue: #00a5b4;
+          --blue-strong: #008faa;
+          --cyan: #00a5b4;
           --orange: #ff7800;
           --green: #08a642;
-          --navy: #031638;
-          --line: #dbe3ef;
-          --muted: #72809a;
-          --page-bg: #fbfcfe;
-          --sidebar-bg: linear-gradient(155deg, #041936 0%, #001633 54%, #061e43 100%);
+          --navy: #3a4454;
+          --line: #e5e7ea;
+          --muted: #9da5b1;
+          --page-bg: #f7f7f7;
+          --sidebar-bg: #3a4454;
           --card-bg: #ffffff;
-          --text-main: #00145a;
-          --text-secondary: #50627f;
-          --border: #dbe3ef;
-          --surface-muted: #e6edf7;
+          --text-main: #3a4454;
+          --text-secondary: #4f5d73;
+          --border: #e5e7ea;
+          --surface-muted: #f0f0f0;
           --table-header: #ffffff;
           --table-row: #ffffff;
-          --field-bg: #ffffff;
-          --button-bg: #ffffff;
-          --table-section-border: #000000;
-          --card-shadow: 0 5px 18px rgba(0,20,90,.035);
+          --table-text: #007f8b;
+          --table-stripe: #f7fbfb;
+          --table-hover: rgba(0,165,180,.10);
+          --field-bg: #f7f7f7;
+          --button-bg: rgba(0,165,180,.15);
+          --table-section-border: #3a4454;
+          --card-shadow: 0 5px 18px rgba(33,33,33,.07);
         }
         body:has(#dashboard-theme[data-theme="dark"]) {
-          --blue: #7894ff;
-          --blue-strong: #9db0ff;
-          --page-bg: #07111f;
-          --sidebar-bg: linear-gradient(155deg, #020916 0%, #061328 55%, #0a1c35 100%);
-          --card-bg: #111d2e;
-          --text-main: #eef4ff;
-          --text-secondary: #a9b8cf;
-          --border: #2a3b52;
-          --line: #2a3b52;
-          --surface-muted: #26354a;
-          --table-header: #17263c;
-          --table-row: #111d2e;
-          --field-bg: #142238;
-          --button-bg: #142238;
+          --blue: #00a5b4;
+          --blue-strong: #00a5b4;
+          --page-bg: #3a4454;
+          --sidebar-bg: #3a4454;
+          --card-bg: #282f3b;
+          --text-main: #ffffff;
+          --text-secondary: #c9cbcf;
+          --border: rgba(157,165,177,.25);
+          --line: rgba(157,165,177,.25);
+          --surface-muted: #4f5d73;
+          --table-header: #282f3b;
+          --table-row: #282f3b;
+          --table-text: #39c1cd;
+          --table-stripe: #303846;
+          --table-hover: rgba(0,165,180,.18);
+          --field-bg: #282f3b;
+          --button-bg: rgba(0,165,180,.15);
           --table-section-border: #ffffff;
           --card-shadow: 0 7px 22px rgba(0,0,0,.24);
         }
         html, body, [class*="css"], .stApp, .stApp * {
-          font-family: "Inter", Arial, sans-serif !important;
+          font-family: "Work Sans", Arial, sans-serif !important;
           font-synthesis: none;
           letter-spacing: 0px !important;
           text-rendering: geometricPrecision;
@@ -219,7 +225,7 @@ def apply_style(st) -> None:
           border: 1px solid var(--line);
           border-radius: 8px;
           background: #ffffff;
-          box-shadow: 0 3px 14px rgba(0,20,90,.08);
+          box-shadow: 0 3px 14px rgba(33,33,33,.07);
           cursor: pointer;
           pointer-events: auto;
           position: relative;
@@ -251,7 +257,7 @@ def apply_style(st) -> None:
         }
         [data-testid="stSidebar"] > div:first-child { width: 16.1vw !important; min-width:258px !important; max-width:310px !important; }
         [data-testid="stSidebar"] * {
-          color: #f7fbff;
+          color: #ffffff;
         }
         [data-testid="stSidebar"] [data-testid="stSidebarContent"] { padding: 0 12px !important; }
         [data-testid="stSidebar"] [data-testid="stSidebarContent"] > div { padding-top: 0 !important; }
@@ -291,7 +297,7 @@ def apply_style(st) -> None:
           line-height: 28px;
         }
         .brand-title span {
-          color: #19d5ff;
+          color: #00a5b4;
         }
         .side-card {
           background: rgba(255,255,255,.08);
@@ -308,16 +314,16 @@ def apply_style(st) -> None:
           width: calc(min(16.1vw, 310px) - 32px);
         }
         .account-row { display:grid; grid-template-columns:46px 1fr; align-items:center; gap:10px; }
-        .avatar { width:43px; height:43px; display:grid; place-items:center; border-radius:50%; background:#fff; color:#1236cf !important; font-size:17px; font-weight:700; line-height:20px; }
+        .avatar { width:43px; height:43px; display:grid; place-items:center; border-radius:50%; background:#fff; color:#3a4454 !important; font-size:17px; font-weight:700; line-height:20px; }
         .account-name { font-size:14px; font-weight:700; line-height:18px; }
-        .account-sub { color:#9fb1d3 !important; font-size:12px; font-weight:400; line-height:15px; margin-top:5px; }
+        .account-sub { color:#c9cbcf !important; font-size:12px; font-weight:400; line-height:15px; margin-top:5px; }
         .side-nav {
-          background: linear-gradient(90deg, #0799f5, #0cb4f7);
+          background: #00a5b4;
           border-radius: 7px;
           padding: clamp(8px, 1vh, 10px) 18px;
           font-weight: 700;
           margin: 0 0 12px;
-          box-shadow: 0 10px 25px rgba(0,166,255,.2);
+          box-shadow: 0 10px 25px rgba(0,165,180,.2);
           margin-left: -10px;
           margin-right: -5px;
         }
@@ -337,7 +343,7 @@ def apply_style(st) -> None:
         [data-testid="stSidebar"] .st-key-dark_mode { position:fixed; left:47px; bottom:calc(12.6vh - 6px); width:44px; z-index:20; }
         [data-testid="stSidebar"] .st-key-dark_mode [data-testid="stWidgetLabel"] { display:none; }
         .header-actions { position:fixed; top:10px; right:34px; display:flex; gap:12px; z-index:20; }
-        .header-action { position:relative; width:46px; height:46px; display:grid; place-items:center; border:1px solid var(--line); border-radius:8px; color:var(--blue); background:#fff; box-shadow:0 3px 14px rgba(0,20,90,.04); }
+        .header-action { position:relative; width:46px; height:46px; display:grid; place-items:center; border:1px solid var(--line); border-radius:8px; color:var(--blue); background:#fff; box-shadow:0 3px 14px rgba(33,33,33,.07); }
         .header-action .svg-icon { width:22px; height:22px; stroke-width:2; }
         .page-title {
           color: var(--blue);
@@ -352,7 +358,7 @@ def apply_style(st) -> None:
           background: var(--card-bg);
           border: 1px solid var(--border);
           border-radius: 8px;
-          box-shadow: 0 4px 16px rgba(0,20,90,.025);
+          box-shadow: 0 4px 16px rgba(33,33,33,.05);
           padding: 12px 18px;
           height: clamp(82px, 9.16vh, 99px);
           margin-bottom: clamp(12px, 1.53vh, 15px);
@@ -392,14 +398,16 @@ def apply_style(st) -> None:
           background: var(--card-bg);
           border: 1px solid var(--border);
           border-radius: 8px;
-          box-shadow: 0 4px 16px rgba(0,20,90,.025);
+          box-shadow: 0 4px 16px rgba(33,33,33,.05);
         }
         .filter-card-label { color:var(--blue); font-size:12px; line-height:16px; font-weight:700; margin-bottom:6px; }
         [data-testid="stColumn"]:has(.project-filter-label) .stSelectbox { width:64%; }
         [data-testid="stColumn"]:has(.period-filter-label) .stDateInput { width:68%; }
         [data-testid="stColumn"]:has(.period-filter-label) [data-testid="stForm"] .stDateInput {
           width:100%;
+          max-width:100%;
           min-width:0;
+          box-sizing:border-box;
         }
         [data-testid="stColumn"]:has(.filter-card-label) [data-baseweb="select"] > div,
         [data-testid="stColumn"]:has(.filter-card-label) [data-baseweb="input"] > div,
@@ -413,18 +421,27 @@ def apply_style(st) -> None:
           padding-right:40px !important;
         }
         [data-testid="stDateInput"] { position:relative; overflow:visible !important; isolation:isolate; }
-        [data-testid="stDateInput"]:after {
+        [data-testid="stDateInput"] [data-baseweb="input"] {
+          position:relative;
+          width:100%;
+          max-width:100%;
+          min-width:0;
+          overflow:hidden !important;
+          border-radius:8px;
+          box-sizing:border-box;
+        }
+        [data-testid="stDateInput"] [data-baseweb="input"]:after {
           content:"";
           position:absolute;
           right:0;
-          bottom:0;
+          top:0;
           z-index:50;
           display:block;
           width:40px;
-          height:40px;
+          height:100%;
           pointer-events:none;
-          border-radius:0 5px 5px 0;
-          background:#f1f3f7 center / 18px 18px no-repeat url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2314263f' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m7 9 5 5 5-5'/%3E%3C/svg%3E");
+          border-radius:0 8px 8px 0;
+          background:#f0f0f0 center / 18px 18px no-repeat url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%233a4454' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m7 9 5 5 5-5'/%3E%3C/svg%3E");
         }
         [data-testid="stForm"]:has([data-testid="stDateInput"]) [data-testid="stFormSubmitButton"] {
           padding-top:28px;
@@ -451,7 +468,10 @@ def apply_style(st) -> None:
           border-color:var(--blue) !important;
           color:var(--blue-strong) !important;
         }
-        body:has(#dashboard-theme[data-theme="dark"]) [data-testid="stDateInput"]:after { background-color:#26354a; }
+        body:has(#dashboard-theme[data-theme="dark"]) [data-testid="stDateInput"] [data-baseweb="input"]:after { background-color:#4f5d73; }
+        body:has(#dashboard-theme[data-theme="dark"]) [data-testid="stColumn"]:has(.filter-card-label) input {
+          color:var(--text-main) !important;
+        }
         .kpi-card {
           position: relative;
           height: clamp(140px, 15.48vh, 168px);
@@ -485,7 +505,7 @@ def apply_style(st) -> None:
           line-height: 27px;
         }
         .kpi-note {
-          color: #02236c;
+          color: var(--text-secondary);
           font-size: 12px;
           font-weight: 500;
           line-height: 16px;
@@ -514,7 +534,7 @@ def apply_style(st) -> None:
           height: clamp(109px, 11.75vh, 127px);
           margin: .1rem auto .2rem;
           border-radius: 215px 215px 0 0;
-          background: conic-gradient(from 270deg at 50% 100%, #1ab7f0 0deg, #1ab7f0 var(--angle), #e6edf7 var(--angle), #e6edf7 180deg, transparent 180deg);
+          background: conic-gradient(from 270deg at 50% 100%, #00a5b4 0deg, #00a5b4 var(--angle), var(--surface-muted) var(--angle), var(--surface-muted) 180deg, transparent 180deg);
           position: relative;
         }
         .gauge:after {
@@ -553,13 +573,13 @@ def apply_style(st) -> None:
           margin: 25px 0 23px;
         }
         .progress-panel { position:relative; }
-        .target-marker { position:absolute; left:83.3%; top:25px; height:160px; z-index:3; color:#08a642; font-size:11px; font-weight:700; line-height:14px; text-align:center; }
+        .target-marker { position:absolute; left:calc(83.333% - 20.667px); top:40px; bottom:18px; z-index:3; color:#08a642; font-size:11px; font-weight:700; line-height:14px; text-align:center; transform:translateX(-50%); }
         .target-marker:before { content:""; position:absolute; top:23px; left:50%; width:0; height:0; transform:translateX(-50%); border-left:12px solid transparent; border-right:12px solid transparent; border-top:20px solid #08a642; }
         .target-marker:after { content:""; position:absolute; top:43px; bottom:0; left:50%; border-left:2px dashed #08a642; transform:translateX(-50%); }
         .progress-label {
           display: flex;
           justify-content: space-between;
-          color: #062b75;
+          color: var(--text-main);
           font-size: 12px;
           font-weight: 700;
           line-height: 16px;
@@ -567,8 +587,8 @@ def apply_style(st) -> None:
         }
         .bar {
           height: 31px;
-          background: #dde3ed;
-          border: 1px solid #c8d1df;
+          background: var(--surface-muted);
+          border: 1px solid var(--border);
           border-radius: 5px;
           overflow: hidden;
         }
@@ -582,7 +602,7 @@ def apply_style(st) -> None:
           justify-content: flex-end;
           padding-right: .75rem;
           color: #ffffff;
-          background: linear-gradient(90deg, #0527ff, #001bd1);
+          background: linear-gradient(90deg, #00a5b4, #008faa);
           font-weight: 700;
           font-size: 14px;
           line-height: 18px;
@@ -623,7 +643,7 @@ def apply_style(st) -> None:
           top: -14px;
         }
         .eff-note {
-          color: #061637;
+          color: var(--text-main);
           font-size: 11px;
           font-weight: 500;
           line-height: 14px;
@@ -632,7 +652,7 @@ def apply_style(st) -> None:
           z-index: 2;
           top: 12px;
         }
-        .needle { position:absolute; top:4px; left:50%; width:4px; height:52px; background:#06265b; border-radius:4px; transform-origin:50% 100%; transform:translateX(-50%) rotate(-8deg); z-index:3; }
+        .needle { position:absolute; top:4px; left:50%; width:4px; height:52px; background:#008faa; border-radius:4px; transform-origin:50% 100%; transform:translateX(-50%) rotate(-8deg); z-index:3; }
         .legend-dot { display:inline-block; width:9px; height:9px; border-radius:50%; margin:0 5px 0 12px; }
         .table-title {
           color: var(--blue);
@@ -645,10 +665,10 @@ def apply_style(st) -> None:
           border: 1px solid var(--line);
           border-radius: 8px;
           overflow: hidden;
-          box-shadow: 0 10px 26px rgba(0,20,90,.035);
+          box-shadow: 0 10px 26px rgba(33,33,33,.07);
         }
         .stDownloadButton button {
-          border: 1px solid #dbe5f4;
+          border: 1px solid var(--border);
           border-radius: 8px;
           background: #ffffff;
           color: var(--blue);
@@ -664,9 +684,10 @@ def apply_style(st) -> None:
           content: "";
           width: 16px;
           height: 16px;
-          background: center / 16px 16px no-repeat url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%230528f7' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 3v12m0 0 5-5m-5 5-5-5M5 21h14'/%3E%3C/svg%3E");
+          background: center / 16px 16px no-repeat url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2300a5b4' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 3v12m0 0 5-5m-5 5-5-5M5 21h14'/%3E%3C/svg%3E");
         }
         .stDownloadButton { position:relative; left:-9px; top:3px; width:235px; }
+        .st-key-download_csv_data { margin-bottom:12px; }
         [data-testid="stHorizontalBlock"]:has(.stDownloadButton) { justify-content:flex-end; }
         [data-testid="stHorizontalBlock"]:has(.stDownloadButton) > [data-testid="stColumn"]:last-child {
           flex:0 0 235px !important;
@@ -678,15 +699,22 @@ def apply_style(st) -> None:
         [data-testid="stHorizontalBlock"]:has(.kpi-card) { position:relative; left:-5px; gap:18px; width:calc(100% - 3px); }
         [data-testid="stHorizontalBlock"]:has(.panel) { position:relative; left:-9px; gap:17px; width:calc(100% + 3px); }
         [data-testid="stDataFrame"] { font-size: 11px; }
-        .campaign-table-wrap { position:relative; left:-10px; top:-10px; width:calc(100% + 10px); overflow:hidden; border:1px solid var(--line); border-radius:8px; background:#fff; box-shadow:0 8px 22px rgba(0,20,90,.035); }
-        .campaign-table { width:100%; border-collapse:collapse; table-layout:fixed; font-size:10px; line-height:13px; color:var(--blue); }
-        .campaign-table th,.campaign-table td { height:26px; padding:4px 6px; border-bottom:1px solid #e7edf6; text-align:center; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-        .campaign-table th { font-size:9px; font-weight:700; line-height:12px; color:var(--blue); background:#fff; }
+        .campaign-table-wrap { position:relative; left:-10px; top:-10px; width:calc(100% + 10px); overflow-x:auto; overflow-y:hidden; border:1px solid var(--line); border-radius:8px; background:var(--card-bg); box-shadow:0 8px 22px rgba(33,33,33,.07); scrollbar-gutter:stable; }
+        .campaign-table-wrap:focus-visible { outline:3px solid rgba(0,165,180,.35); outline-offset:2px; }
+        .campaign-table { width:100%; min-width:1700px; border-collapse:collapse; table-layout:fixed; font-size:12px; line-height:16px; color:var(--table-text); }
+        .campaign-table th,.campaign-table td { height:40px; padding:7px 9px; border-bottom:1px solid var(--border); text-align:center; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+        .campaign-table th { height:44px; font-size:11px; font-weight:700; line-height:14px; color:#fff; white-space:normal; overflow:visible; text-overflow:clip; background:#3a4454; }
         .campaign-table td { font-weight:500; }
-        .campaign-table th:nth-child(3),.campaign-table td:nth-child(3) { width:20%; text-align:left; }
-        .campaign-table th:first-child,.campaign-table td:first-child { width:8%; text-align:left; }
-        .campaign-table th:last-child,.campaign-table td:last-child { width:16%; text-align:left; }
+        .campaign-table tbody tr:not(:has(.subtotal-row-marker)):not(:has(.total-row-marker)):nth-child(even) td { background:var(--table-stripe); }
+        .campaign-table tbody tr:not(:has(.subtotal-row-marker)):not(:has(.total-row-marker)):hover td { background:var(--table-hover); }
+        .campaign-table th:first-child,.campaign-table td:first-child { width:120px; text-align:left; }
+        .campaign-table th:nth-child(2),.campaign-table td:nth-child(2) { width:90px; }
+        .campaign-table th:nth-child(3),.campaign-table td:nth-child(3) { width:300px; text-align:left; }
+        .campaign-table th:nth-child(n+4):nth-child(-n+12),.campaign-table td:nth-child(n+4):nth-child(-n+12) { width:105px; }
+        .campaign-table th:last-child,.campaign-table td:last-child { width:245px; text-align:left; }
         .campaign-table td:last-child { white-space:normal; overflow:visible; text-overflow:clip; }
+        .campaign-name { display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+        .sr-only { position:absolute !important; width:1px !important; height:1px !important; padding:0 !important; margin:-1px !important; overflow:hidden !important; clip:rect(0,0,0,0) !important; white-space:nowrap !important; border:0 !important; }
         .delta-value { font-weight:700; white-space:nowrap; }
         .delta-good { color:#08a642; }
         .delta-bad { color:#e11d2e; }
@@ -714,31 +742,31 @@ def apply_style(st) -> None:
         body:has(#dashboard-theme[data-theme="dark"]) .gauge-hole { fill:var(--card-bg); }
         body:has(#dashboard-theme[data-theme="dark"]) .bar { background:var(--surface-muted); border-color:var(--border); }
         body:has(#dashboard-theme[data-theme="dark"]) .kpi-wallet .kpi-value,
-        body:has(#dashboard-theme[data-theme="dark"]) .kpi-wallet .kpi-icon { color:#4f73ff; }
+        body:has(#dashboard-theme[data-theme="dark"]) .kpi-wallet .kpi-icon { color:#00a5b4; }
 
         .campaign-table thead th {
-          background:#000 !important;
+          background:#3a4454 !important;
           color:#fff !important;
-          border-top:1px solid #000 !important;
-          border-bottom:2px solid #000 !important;
-          border-right:1px solid #000 !important;
+          border-top:1px solid #3a4454 !important;
+          border-bottom:2px solid #3a4454 !important;
+          border-right:1px solid #3a4454 !important;
         }
         .campaign-table thead th:first-child,
-        .campaign-table tbody td:first-child { border-left:1px solid #000 !important; }
-        .campaign-table tbody td { border-right:1px solid #000 !important; }
+        .campaign-table tbody td:first-child { border-left:1px solid #3a4454 !important; }
+        .campaign-table tbody td { border-right:1px solid #3a4454 !important; }
         .campaign-table tr:has(.subtotal-row-marker) td {
-          background:#dce6f1 !important;
-          color:#00145a !important;
+          background:rgba(0,165,180,.15) !important;
+          color:var(--text-main) !important;
           font-weight:700 !important;
-          border-top:2px solid #000 !important;
-          border-bottom:2px solid #000 !important;
+          border-top:2px solid #3a4454 !important;
+          border-bottom:2px solid #3a4454 !important;
         }
         .campaign-table tr:has(.total-row-marker) td {
-          background:#000 !important;
+          background:#3a4454 !important;
           color:#fff !important;
           font-weight:700 !important;
-          border-top:2px solid #000 !important;
-          border-bottom:2px solid #000 !important;
+          border-top:2px solid #3a4454 !important;
+          border-bottom:2px solid #3a4454 !important;
         }
         .campaign-table tr:has(.subtotal-row-marker) .delta-value,
         .campaign-table tr:has(.total-row-marker) .delta-value { color:inherit !important; }
@@ -779,11 +807,11 @@ def apply_style(st) -> None:
         .svg-gauge { position:relative; width:min(100%,270px); height:166px; margin:0 auto; }
         .svg-gauge svg { display:block; width:100%; height:132px; overflow:visible; }
         .gauge-track { fill:none; stroke:var(--surface-muted); stroke-width:14; stroke-linecap:round; }
-        .gauge-progress { fill:none; stroke:#19b6ef; stroke-width:14; stroke-linecap:round; }
-        .gauge-needle { stroke:#174f99; stroke-width:6; stroke-linecap:round; }
-        .gauge-needle-shape { fill:#174f99; }
+        .gauge-progress { fill:none; stroke:#00a5b4; stroke-width:14; stroke-linecap:round; }
+        .gauge-needle { stroke:#008faa; stroke-width:6; stroke-linecap:round; }
+        .gauge-needle-shape { fill:#008faa; }
         .gauge-pin { stroke:var(--card-bg); stroke-width:2; }
-        .lead-pin { fill:#19b6ef; }
+        .lead-pin { fill:#00a5b4; }
         .cpl-pin { fill:#ff9d00; }
         .svg-gauge-value { position:absolute; left:0; right:0; top:67px; text-align:center; color:var(--blue); font-size:31px; line-height:31px; font-weight:700; }
         .svg-gauge-caption { position:absolute; left:0; right:0; top:103px; text-align:center; color:var(--blue); font-size:12px; line-height:16px; font-weight:700; }
@@ -814,7 +842,7 @@ def apply_style(st) -> None:
           [data-testid="stColumn"]:has(.filter-card-label) .stSelectbox,
           [data-testid="stColumn"]:has(.filter-card-label) .stDateInput { width:100%; }
           .campaign-table-wrap { overflow-x:auto; }
-          .campaign-table { min-width:1180px; }
+          .campaign-table { min-width:1700px; }
         }
         @media (max-width: 767px) {
           [data-testid="stSidebar"] { width:250px !important; min-width:250px !important; }
@@ -842,6 +870,7 @@ def apply_style(st) -> None:
           .period-filter .filter-value { white-space:nowrap; font-size:12px; }
           .kpi-card { height:145px; margin-bottom:0; }
           .panel { height:235px; margin-bottom:0; padding:14px 18px; }
+          .target-marker { left:calc(83.333% - 12px); bottom:14px; }
           .stDownloadButton { left:0; top:0; width:100%; }
           [data-testid="stHorizontalBlock"]:has(.stDownloadButton) > [data-testid="stColumn"]:last-child {
             flex:0 0 100% !important;
@@ -849,12 +878,49 @@ def apply_style(st) -> None:
             min-width:0 !important;
           }
           .campaign-table-wrap { left:0; top:0; width:100%; overflow-x:auto; }
-          .campaign-table { min-width:1180px; }
+          .campaign-table { min-width:1700px; }
           .cpl-gauge .eff-note { left:-10px; right:-10px; font-size:8px; }
         }
         </style>
         """,
         unsafe_allow_html=True,
+    )
+
+
+def render_project_tooltips(components, selected_project: str) -> None:
+    selected_json = json.dumps(str(selected_project))
+    components.html(
+        fr"""
+        <script>
+        (() => {{
+          const host = window.parent;
+          const doc = host.document;
+          const selectedProject = {selected_json};
+
+          const applyTitles = () => {{
+            const projectSelect = doc.querySelector('.st-key-project_filter [data-baseweb="select"]');
+            if (projectSelect) projectSelect.setAttribute('title', selectedProject);
+
+            doc.querySelectorAll('[role="option"]').forEach((option) => {{
+              const label = option.textContent.replace(/\s+/g, ' ').trim();
+              if (!label) return;
+              option.setAttribute('title', label);
+              option.querySelectorAll('*').forEach((child) => child.setAttribute('title', label));
+            }});
+          }};
+
+          if (host.__dynamicaProjectTooltipObserver) {{
+            host.__dynamicaProjectTooltipObserver.disconnect();
+          }}
+          const observer = new MutationObserver(applyTitles);
+          observer.observe(doc.body, {{ childList: true, subtree: true }});
+          host.__dynamicaProjectTooltipObserver = observer;
+          applyTitles();
+        }})();
+        </script>
+        """,
+        height=0,
+        width=0,
     )
 
 
@@ -1816,6 +1882,7 @@ def main() -> None:
     try:
         import pandas as pd
         import streamlit as st
+        import streamlit.components.v1 as components
     except ImportError:
         metadata = load_last_update()
         print(f"Dynamica Retail dashboard - status: {metadata.get('status')}")
@@ -1854,11 +1921,16 @@ def main() -> None:
     status = first_value(metadata, ["status"])
 
     st.markdown(
-        '<div class="font-preload" aria-hidden="true"><span>Inter</span><span>Inter</span><span>Inter</span><span>Inter</span></div>'
-        f'<div class="header-actions"><div class="header-action">{svg_icon("bell")}</div><div class="header-action">{svg_icon("power")}</div></div>'
+        '<div class="font-preload" aria-hidden="true"><span>Work Sans</span><span>Work Sans</span><span>Work Sans</span><span>Work Sans</span></div>'
+        f'<div class="header-actions"><div class="header-action">{svg_icon("power")}</div></div>'
         '<div class="page-title">Dashboard Dynamica Retail</div>',
         unsafe_allow_html=True,
     )
+    if status == "partial":
+        message = str(metadata.get("error") or "Una o più fonti non sono aggiornate.")
+        st.warning(f"Aggiornamento parziale: {message}")
+    elif status in {"error", "missing"}:
+        st.error("L'ultimo aggiornamento non è stato completato. Sono mostrati gli ultimi dati disponibili.")
 
     top_left, top_right = st.columns([1, 1.08], gap="large")
     project_options = ["Tutti i progetti"] + sorted(
@@ -1983,16 +2055,27 @@ def main() -> None:
         cpl_delta_text = money(abs(cpl_delta)).replace(" EUR", " €")
         cpl_note = f"{'+' if cpl_delta >= 0 else '-'}{cpl_delta_text} vs CPL target"
 
+    delta_spend_color = (
+        "#08a642"
+        if delta_spend is not None and not pd.isna(delta_spend) and delta_spend < 0
+        else "#ff9d00"
+    )
+    cpl_card_color = (
+        "#08a642"
+        if cpl_delta is not None and not pd.isna(cpl_delta) and cpl_delta < 0
+        else "#ff9d00"
+    )
+
     kpi_cols = st.columns([.93, .95, 1.0, 1.03], gap="medium")
     with kpi_cols[0]:
         render_kpi_card(
             st, "Speso totale", money(spend_total).replace(" EUR", " €"), spend_note,
-            f"Budget mese: {money(budget_total).replace(' EUR', ' €')}", "#0527ff", spend_icon, "check-circle"
+            f"Budget mese: {money(budget_total).replace(' EUR', ' €')}", "#00a5b4", spend_icon, "check-circle"
         )
     with kpi_cols[1]:
         render_kpi_card(
             st, "Delta speso", money(delta_spend).replace(" EUR", " €"),
-            "vs spending pianificato", "", "#ff7a00"
+            "vs spending pianificato", "", delta_spend_color
         )
     with kpi_cols[2]:
         render_kpi_card(
@@ -2002,7 +2085,7 @@ def main() -> None:
     with kpi_cols[3]:
         render_kpi_card(
             st, "CPL medio", money(cpl_avg).replace(" EUR", " €") if cpl_avg is not None else "—", cpl_note,
-            f"CPL target medio: {money(cpl_target_avg).replace(' EUR', ' €')}", "#ff7a00", "trend-up", "target"
+            f"CPL target medio: {money(cpl_target_avg).replace(' EUR', ' €')}", cpl_card_color, "trend-up", "target"
         )
 
     delivery_width = min(max(delivery_ratio or 0, 0), 1.2) / 1.2 * 100
@@ -2180,18 +2263,32 @@ def main() -> None:
             for index, value in enumerate(display_df["Action"])
         ]
 
-    for column in ("Canale", "Campagna"):
-        if column in display_df:
-            display_df[column] = display_df[column].fillna("")
+    if "Canale" in display_df:
+        display_df["Canale"] = display_df["Canale"].fillna("").map(
+            lambda value: html.escape(str(value))
+        )
+
+    if "Campagna" in display_df:
+        display_df["Campagna"] = display_df["Campagna"].fillna("")
+        for position, index in enumerate(display_df.index):
+            campaign = html.escape(str(display_df.at[index, "Campagna"] or ""))
+            if row_types.iloc[position] == "campaign" and campaign:
+                display_df.at[index, "Campagna"] = (
+                    f'<span class="campaign-name" title="{campaign}">{campaign}</span>'
+                )
+            else:
+                display_df.at[index, "Campagna"] = campaign
 
     if "Funnel" in display_df:
-        for index, row_type in row_types.items():
+        for position, index in enumerate(display_df.index):
+            row_type = row_types.iloc[position]
+            label = html.escape(str(display_df.at[index, "Funnel"] or ""))
             if row_type not in {"subtotal", "total"}:
+                display_df.at[index, "Funnel"] = label
                 continue
             marker = (
                 "subtotal-row-marker" if row_type == "subtotal" else "total-row-marker"
             )
-            label = html.escape(str(display_df.at[index, "Funnel"] or ""))
             display_df.at[index, "Funnel"] = (
                 f'<span class="{marker}" aria-hidden="true"></span>{label}'
             )
@@ -2225,17 +2322,26 @@ def main() -> None:
                 file_name=csv_filename,
                 mime="text/csv",
                 width="stretch",
+                key="download_csv_data",
             )
         except Exception:
             st.error("I file di esportazione non sono momentaneamente disponibili.")
 
-    table_html = display_df.to_html(index=False, classes="campaign-table", border=0, escape=False)
+    table_html = display_df.to_html(
+        index=False, classes="campaign-table", border=0, escape=False
+    )
+    table_html = table_html.replace(
+        ">",
+        '><caption class="sr-only">Dettaglio delle campagne e dei principali indicatori di performance</caption>',
+        1,
+    )
     st.markdown(
-        f'<div class="campaign-table-wrap">{table_html}</div>',
+        f'<div class="campaign-table-wrap" role="region" tabindex="0" aria-label="Tabella campagne, scorrimento orizzontale">{table_html}</div>',
         unsafe_allow_html=True,
     )
 
     render_local_ads_verification(st, pd, metadata, selected_start, selected_end)
+    render_project_tooltips(components, selected_project)
 
 
 if __name__ == "__main__":
