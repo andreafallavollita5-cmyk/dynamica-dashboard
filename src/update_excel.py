@@ -21,6 +21,7 @@ from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 
 from src.report_groups import CLIENT_GROUPS, SUMMARY_FIELDS, client_subtotal_group
+from src.dates import weekdays_in_month
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -268,12 +269,22 @@ def _first_official_value(frame: pd.DataFrame, column: str) -> float | None:
     return None
 
 
-def _official_summary_values(row: pd.Series, days_in_month: int) -> list[Any]:
+def _official_summary_values(
+    row: pd.Series,
+    days_in_month: int,
+    spending_daily_fallback: float | None = None,
+) -> list[Any]:
     """Read one official report row; never rebuild subtotal or total values."""
     values: list[Any] = []
     for field in SUMMARY_FIELDS:
         if field == "stima_spending_giornaliera":
-            value = _safe_divide(row.get("investimento_media"), days_in_month)
+            value = _as_number(row.get(field))
+            if value is None:
+                value = (
+                    spending_daily_fallback
+                    if spending_daily_fallback is not None
+                    else _safe_divide(row.get("investimento_media"), days_in_month)
+                )
         else:
             value = _as_number(row.get(field))
         values.append(value)
@@ -381,7 +392,9 @@ def _add_conditional_formatting(ws, last_row: int) -> None:
     )
 
 
-def _write_data_sheet(ws, frame: pd.DataFrame, days_in_month: int) -> None:
+def _write_data_sheet(
+    ws, frame: pd.DataFrame, days_in_month: int, dem_days_in_month: int
+) -> None:
     for merged_range in list(ws.merged_cells.ranges):
         ws.unmerge_cells(str(merged_range))
     ws.delete_rows(1, ws.max_row)
@@ -393,8 +406,14 @@ def _write_data_sheet(ws, frame: pd.DataFrame, days_in_month: int) -> None:
             if "stima_spending_progressiva" in data_frame.columns
             else len(data_frame.columns)
         )
-        daily = data_frame.get("investimento_media", pd.Series(index=data_frame.index)).map(
-            lambda value: _safe_divide(value, days_in_month)
+        daily = data_frame.apply(
+            lambda row: _safe_divide(
+                row.get("investimento_media"),
+                dem_days_in_month
+                if client_subtotal_group(row.to_dict()) == "dem"
+                else days_in_month,
+            ),
+            axis=1,
         )
         data_frame.insert(insert_at, "stima_spending_giornaliera", daily)
 
@@ -531,7 +550,21 @@ def generate_client_excel(
         raise ValueError("Nessuna campagna disponibile per l'export.")
     metadata = _metadata(report_df, campaign_frame)
     days_in_month = metadata["days_in_month"]
+    dem_days_in_month = weekdays_in_month(metadata["start_date"].date())
     funnel_groups = _client_subtotal_groups(campaign_frame)
+    campaign_daily_values = campaign_frame.apply(
+        lambda row: (
+            _as_number(row.get("stima_spending_giornaliera"))
+            if _as_number(row.get("stima_spending_giornaliera")) is not None
+            else _safe_divide(
+                row.get("investimento_media"),
+                dem_days_in_month
+                if client_subtotal_group(row.to_dict()) == "dem"
+                else days_in_month,
+            )
+        ),
+        axis=1,
+    )
     output_row_count = len(campaign_frame) + len(funnel_groups)
 
     workbook = load_workbook(template)
@@ -563,7 +596,12 @@ def generate_client_excel(
     current_row = FIRST_DATA_ROW
     for group_slug, funnel_value, group in funnel_groups:
         for _, row in group.iterrows():
-            spending_daily = _safe_divide(row.get("investimento_media"), days_in_month)
+            spending_daily = _as_number(row.get("stima_spending_giornaliera"))
+            if spending_daily is None:
+                spending_daily = _safe_divide(
+                    row.get("investimento_media"),
+                    dem_days_in_month if group_slug == "dem" else days_in_month,
+                )
             values = [
                 _as_text(row.get("funnel")),
                 _as_text(row.get("platform")),
@@ -612,8 +650,11 @@ def generate_client_excel(
         ]
         subtotal_values = [f"TOT {subtotal_label}", None, None, None, None]
         if len(subtotal.index) == 1:
+            subtotal_daily = campaign_daily_values.loc[group.index].dropna().sum()
             subtotal_values.extend(
-                _official_summary_values(subtotal.iloc[0], days_in_month)
+                _official_summary_values(
+                    subtotal.iloc[0], days_in_month, float(subtotal_daily)
+                )
             )
         elif official_frame.empty:
             subtotal_values.extend(_legacy_summary_values(frame, group_slug))
@@ -628,8 +669,11 @@ def generate_client_excel(
     official_total = official_frame[official_frame.get("row_type", "") == "total"]
     total_values = ["TOTALE GENERALE", None, None, None, None]
     if len(official_total.index) == 1:
+        total_daily = campaign_daily_values.dropna().sum()
         total_values.extend(
-            _official_summary_values(official_total.iloc[0], days_in_month)
+            _official_summary_values(
+                official_total.iloc[0], days_in_month, float(total_daily)
+            )
         )
     elif official_frame.empty:
         total_values.extend(_legacy_summary_values(frame))
@@ -668,7 +712,7 @@ def generate_client_excel(
     report_ws.print_area = f"A1:W{total_row}"
     report_ws.print_options.horizontalCentered = True
 
-    _write_data_sheet(data_ws, frame, days_in_month)
+    _write_data_sheet(data_ws, frame, days_in_month, dem_days_in_month)
     config_values = {
         "B2": metadata["client_name"],
         "B3": metadata["start_date"].date(),

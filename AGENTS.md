@@ -490,6 +490,18 @@ cpl_effettivo = speso_effettivo / lead_effettive
 delta_cpl = cpl_effettivo - cpl_target
 ```
 
+Eccezione DEM:
+
+```text
+dem_days_in_month = giorni da lunedi a venerdi nel mese corrente
+dem_elapsed_days = giorni da lunedi a venerdi tra start_date ed end_date inclusi
+stima_spending_progressiva = investimento_media / dem_days_in_month * dem_elapsed_days
+```
+
+Per le DEM si escludono solo sabato e domenica. Le festivita infrasettimanali
+restano incluse. La regola riguarda lo spending stimato, non le lead stimate o
+lo speso effettivo.
+
 Gestione divisioni:
 
 * se `lead_effettive` è 0 o vuoto, `cpl_effettivo` resta vuoto;

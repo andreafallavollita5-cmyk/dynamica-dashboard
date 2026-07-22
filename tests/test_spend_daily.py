@@ -109,6 +109,28 @@ class SpendDailyTests(unittest.TestCase):
         self.assertEqual(result["speso_effettivo"].tolist(), [30.0, 7.0])
         self.assertEqual(result["stima_spending_progressiva"].tolist(), [300.0, 600.0])
 
+    def test_dem_estimate_uses_only_weekdays_in_selected_range(self):
+        report = report_rows().iloc[[0]].copy()
+        report.loc[:, "platform"] = "DEM"
+        report.loc[:, "channel"] = "DEM"
+        report.loc[:, "investimento_media"] = 2300.0
+        report.loc[:, "google_campaign_id"] = ""
+        result = apply_daily_spend_filter(
+            pd, report, daily_rows(), date(2026, 7, 1), date(2026, 7, 21)
+        )
+        self.assertEqual(result.iloc[0]["stima_spending_giornaliera"], 100.0)
+        self.assertEqual(result.iloc[0]["stima_spending_progressiva"], 1500.0)
+
+    def test_dem_weekend_only_range_has_zero_estimated_spend(self):
+        report = report_rows().iloc[[0]].copy()
+        report.loc[:, "platform"] = "DEM"
+        report.loc[:, "channel"] = "DEM"
+        report.loc[:, "google_campaign_id"] = ""
+        result = apply_daily_spend_filter(
+            pd, report, daily_rows(), date(2026, 7, 4), date(2026, 7, 5)
+        )
+        self.assertEqual(result.iloc[0]["stima_spending_progressiva"], 0.0)
+
     def test_single_day(self):
         result = apply_daily_spend_filter(
             pd, report_rows(), daily_rows(), date(2026, 7, 2), date(2026, 7, 2)

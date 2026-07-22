@@ -140,8 +140,22 @@ class OfficialReportRowsTests(unittest.TestCase):
         self.assertEqual(len(campaigns), 2)
         self.assertEqual(len(total), 1)
         self.assertEqual(campaigns[1]["speso_effettivo"], 24)
+        self.assertAlmostEqual(campaigns[1]["stima_spending_progressiva"], 100 / 23 * 13)
         self.assertEqual(total[0]["lead_effettive"], 5)
         self.assertFalse(any(key.startswith("kpi_") for key in campaigns[0]))
+
+    def test_dem_spending_estimate_excludes_weekends_but_not_weekdays(self):
+        rows = build_report_rows(
+            [manual(25, "DEM", platform="Dem", channel="DEM", investimento_media=2300)],
+            [],
+            [],
+            date(2026, 7, 1),
+            date(2026, 7, 21),
+            crm_leads_by_excel_row={25: 0},
+        )
+        campaign = next(row for row in rows if row["row_type"] == "campaign")
+        self.assertEqual(campaign["stima_spending_giornaliera"], 100)
+        self.assertEqual(campaign["stima_spending_progressiva"], 1500)
 
     def test_official_period_excel_download_does_not_recalculate_rows(self):
         frame = pd.DataFrame(

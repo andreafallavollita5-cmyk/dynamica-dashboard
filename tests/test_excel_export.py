@@ -141,6 +141,7 @@ class ClientExcelExportTests(unittest.TestCase):
             meta_row = next(row for row in campaign_rows if report.cell(row, 5).value == "Campagna Meta")
             self.assertIsNone(report.cell(meta_row, 21).value)
             dem_row = next(row for row in campaign_rows if report.cell(row, 5).value == "Campagna DEM")
+            self.assertAlmostEqual(report.cell(dem_row, 16).value, 1000 / 23)
             self.assertIsNone(report.cell(dem_row, 21).value)
             self.assertTrue(all(report.cell(row, 1).value or report.cell(row, 5).value for row in range(5, total_row)))
             data = workbook["Dati"]

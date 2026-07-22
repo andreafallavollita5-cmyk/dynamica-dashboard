@@ -124,6 +124,10 @@ o altri dati personali CRM.
 La dashboard usa questo file per ricalcolare campagne, KPI, subtotali e totale
 su qualsiasi intervallo selezionato. Area Clienti viene ripartita sulle cinque
 righe dopo aver sommato l'intero intervallo; lo speso DEM resta `lead x CPL`.
+Per le DEM, la stima spending distribuisce il budget mensile soltanto sui giorni
+da lunedi a venerdi: sabato e domenica sono esclusi, mentre le festivita
+infrasettimanali restano incluse. Le altre campagne continuano a usare tutti i
+giorni di calendario.
 CSV ed Excel scaricati includono le righe `TOT Area Clienti`, `TOT Lead Veloce`,
 `TOT DEM` e `TOTALE GENERALE` relative alle date selezionate.
 

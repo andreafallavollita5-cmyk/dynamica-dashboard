@@ -18,7 +18,7 @@ from src.config import load_settings
 from src.crm_export_selector import select_crm_export
 from src.crm_excel_client import read_crm_export
 from src.crm_lead_matcher import match_crm_leads
-from src.dates import current_month_until_yesterday
+from src.dates import current_month_until_yesterday, weekdays_inclusive, weekdays_in_month
 from src.dynamics_client import fetch_effective_leads
 from src.google_ads_client import fetch_google_campaign_delivery
 from src.google_sheets_client import (
@@ -36,7 +36,8 @@ REPORT_COLUMNS = [
     "platform", "channel", "campaign_name", "investimento_media",
     "percentuale_investimento", "cpp_medio", "stima_pratiche", "cpl_target",
     "stima_lead", "stima_lead_giornaliere", "stima_lead_progressiva",
-    "lead_effettive", "delta_lead", "stima_spending_progressiva",
+    "lead_effettive", "delta_lead", "stima_spending_giornaliera",
+    "stima_spending_progressiva",
     "speso_effettivo", "delta_speso", "delta_delivery_pct", "cpl_effettivo",
     "delta_cpl", "action", "google_campaign_id", "meta_campaign_id",
     "dynamics_campaign_key", "source_status", "lead_allocation_method",
@@ -302,6 +303,8 @@ def build_report_rows(
     report_date = report_date or date.today()
     days_in_month = calendar.monthrange(start_date.year, start_date.month)[1]
     elapsed_days = max((end_date - start_date).days + 1, 0)
+    dem_days_in_month = weekdays_in_month(start_date)
+    dem_elapsed_days = weekdays_inclusive(start_date, end_date)
     delivery = {"google": google_rows, "meta": meta_rows}
     statuses = {"google": google_status, "meta": meta_status}
     output: list[dict] = []
@@ -324,6 +327,7 @@ def build_report_rows(
             else _number(manual.get("lead_effettive_manual"))
         )
         cpl_target = _number(manual.get("cpl_target"))
+        is_dem = client_subtotal_group(manual) == "dem"
 
         if connection_failures[index]:
             speso_effettivo = None
@@ -331,7 +335,6 @@ def build_report_rows(
             speso_effettivo = ads_spends[index]
         else:
             if crm_mode:
-                is_dem = client_subtotal_group(manual) == "dem"
                 speso_effettivo = (
                     lead_effettive * cpl_target
                     if is_dem and cpl_target is not None
@@ -361,13 +364,25 @@ def build_report_rows(
                 manual, "stima_lead_progressiva", calculated_lead_progressiva
             )
         )
+        spending_days_in_month = dem_days_in_month if is_dem else days_in_month
+        spending_elapsed_days = dem_elapsed_days if is_dem else elapsed_days
         calculated_spending_progressiva = (
-            investimento / days_in_month * elapsed_days
+            investimento / spending_days_in_month * spending_elapsed_days
             if investimento is not None else None
+        )
+        calculated_spending_giornaliera = safe_divide(
+            investimento, spending_days_in_month
+        )
+        stima_spending_giornaliera = (
+            calculated_spending_giornaliera
+            if crm_mode or is_dem
+            else _sheet_value_or(
+                manual, "stima_spending_giornaliera", calculated_spending_giornaliera
+            )
         )
         stima_spending_progressiva = (
             calculated_spending_progressiva
-            if crm_mode
+            if crm_mode or is_dem
             else _sheet_value_or(
                 manual, "stima_spending_progressiva", calculated_spending_progressiva
             )
@@ -413,6 +428,7 @@ def build_report_rows(
                 "stima_lead_progressiva": stima_lead_progressiva,
                 "lead_effettive": lead_effettive,
                 "delta_lead": delta_lead,
+                "stima_spending_giornaliera": stima_spending_giornaliera,
                 "stima_spending_progressiva": stima_spending_progressiva,
                 "speso_effettivo": speso_effettivo,
                 "delta_speso": delta_speso,
@@ -469,6 +485,7 @@ def _summary_row(rows: list[dict], label: str, row_type: str) -> dict:
     lead_progress = _sum(rows, "stima_lead_progressiva")
     leads = _sum(rows, "lead_effettive")
     spend_plan = _sum(rows, "stima_spending_progressiva")
+    spend_daily_plan = _sum(rows, "stima_spending_giornaliera")
     spend = _sum(rows, "speso_effettivo")
     cpp = safe_divide(investment, practices)
     cpl_target = safe_divide(investment, lead_target)
@@ -508,6 +525,7 @@ def _summary_row(rows: list[dict], label: str, row_type: str) -> dict:
         "stima_lead_progressiva": lead_progress,
         "lead_effettive": leads,
         "delta_lead": delta_lead,
+        "stima_spending_giornaliera": spend_daily_plan,
         "stima_spending_progressiva": spend_plan,
         "speso_effettivo": spend,
         "delta_speso": delta_spend,

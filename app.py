@@ -1188,6 +1188,7 @@ def apply_daily_spend_filter(pd, report_df, daily_df, start_date, end_date):
     from calendar import monthrange
     import re
     from src.report_groups import client_subtotal_group
+    from src.dates import weekdays_inclusive, weekdays_in_month
 
     if daily_df.empty:
         return report_df.copy()
@@ -1201,6 +1202,8 @@ def apply_daily_spend_filter(pd, report_df, daily_df, start_date, end_date):
     result = report_df.copy()
     selected_days = (end_date - start_date).days + 1
     days_in_month = monthrange(start_date.year, start_date.month)[1]
+    dem_selected_days = weekdays_inclusive(start_date, end_date)
+    dem_days_in_month = weekdays_in_month(start_date)
 
     def clean_id(value) -> str:
         if pd.isna(value):
@@ -1333,10 +1336,17 @@ def apply_daily_spend_filter(pd, report_df, daily_df, start_date, end_date):
 
     result["speso_effettivo"] = pd.Series(dynamic_values)
     if "investimento_media" in result:
-        result["stima_spending_progressiva"] = (
-            pd.to_numeric(result["investimento_media"], errors="coerce")
-            / days_in_month
-            * selected_days
+        investment = pd.to_numeric(result["investimento_media"], errors="coerce")
+        is_dem = result.apply(
+            lambda row: client_subtotal_group(row.to_dict()) == "dem", axis=1
+        )
+        result["stima_spending_progressiva"] = investment / days_in_month * selected_days
+        result.loc[is_dem, "stima_spending_progressiva"] = (
+            investment.loc[is_dem] / dem_days_in_month * dem_selected_days
+        )
+        result["stima_spending_giornaliera"] = investment / days_in_month
+        result.loc[is_dem, "stima_spending_giornaliera"] = (
+            investment.loc[is_dem] / dem_days_in_month
         )
     result["delta_speso"] = result["speso_effettivo"] - result["stima_spending_progressiva"]
     result["delta_delivery_pct"] = result["delta_speso"] / result["stima_spending_progressiva"].replace(0, pd.NA)
