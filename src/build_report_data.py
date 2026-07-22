@@ -18,6 +18,7 @@ from src.config import load_settings
 from src.crm_export_selector import select_crm_export
 from src.crm_excel_client import read_crm_export
 from src.crm_lead_matcher import match_crm_leads
+from src.combined_campaigns import apply_combined_campaign_metrics
 from src.dates import current_month_until_yesterday, weekdays_inclusive, weekdays_in_month
 from src.dynamics_client import fetch_effective_leads
 from src.google_ads_client import fetch_google_campaign_delivery
@@ -457,6 +458,7 @@ def build_report_rows(
         )
     if not output:
         return output
+    apply_combined_campaign_metrics(output)
     if crm_mode:
         return _append_official_rows(
             output,

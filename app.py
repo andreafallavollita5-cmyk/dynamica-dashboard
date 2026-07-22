@@ -720,12 +720,12 @@ def apply_style(st) -> None:
         .campaign-table td { font-weight:500; }
         .campaign-table tbody tr:not(:has(.subtotal-row-marker)):not(:has(.total-row-marker)):nth-child(even) td { background:var(--table-stripe); }
         .campaign-table tbody tr:not(:has(.subtotal-row-marker)):not(:has(.total-row-marker)):hover td { background:var(--table-hover); }
-        .campaign-table th:first-child,.campaign-table td:first-child { width:120px; text-align:left; }
-        .campaign-table th:nth-child(2),.campaign-table td:nth-child(2) { width:90px; }
-        .campaign-table th:nth-child(3),.campaign-table td:nth-child(3) { width:300px; text-align:left; }
-        .campaign-table th:nth-child(n+4):nth-child(-n+12),.campaign-table td:nth-child(n+4):nth-child(-n+12) { width:105px; }
-        .campaign-table th:last-child,.campaign-table td:last-child { width:245px; text-align:left; }
-        .campaign-table td:last-child { white-space:normal; overflow:visible; text-overflow:clip; }
+        .campaign-table th.col-funnel,.campaign-table td.col-funnel { width:120px; text-align:left; }
+        .campaign-table th.col-canale,.campaign-table td.col-canale { width:90px; }
+        .campaign-table th.col-campagna,.campaign-table td.col-campagna { width:300px; text-align:left; }
+        .campaign-table th.col-metric,.campaign-table td.col-metric { width:105px; }
+        .campaign-table th.col-action,.campaign-table td.col-action { width:245px; text-align:left; }
+        .campaign-table td.col-action { white-space:normal; overflow:visible; text-overflow:clip; }
         .campaign-name { display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
         .sr-only { position:absolute !important; width:1px !important; height:1px !important; padding:0 !important; margin:-1px !important; overflow:hidden !important; clip:rect(0,0,0,0) !important; white-space:nowrap !important; border:0 !important; }
         .delta-value { font-weight:700; white-space:nowrap; }
@@ -783,20 +783,20 @@ def apply_style(st) -> None:
         }
         .campaign-table tr:has(.subtotal-row-marker) .delta-value,
         .campaign-table tr:has(.total-row-marker) .delta-value { color:inherit !important; }
-        .campaign-table th:nth-child(4),
-        .campaign-table td:nth-child(4),
-        .campaign-table th:nth-child(7),
-        .campaign-table td:nth-child(7),
-        .campaign-table th:nth-child(10),
-        .campaign-table td:nth-child(10) {
+        .campaign-table th.col-stima-lead,
+        .campaign-table td.col-stima-lead,
+        .campaign-table th.col-stima-spending,
+        .campaign-table td.col-stima-spending,
+        .campaign-table th.col-cpl-target,
+        .campaign-table td.col-cpl-target {
           border-left:2px solid var(--table-section-border) !important;
         }
-        body:has(#dashboard-theme[data-theme="dark"]) .campaign-table th:nth-child(4),
-        body:has(#dashboard-theme[data-theme="dark"]) .campaign-table td:nth-child(4),
-        body:has(#dashboard-theme[data-theme="dark"]) .campaign-table th:nth-child(7),
-        body:has(#dashboard-theme[data-theme="dark"]) .campaign-table td:nth-child(7),
-        body:has(#dashboard-theme[data-theme="dark"]) .campaign-table th:nth-child(10),
-        body:has(#dashboard-theme[data-theme="dark"]) .campaign-table td:nth-child(10) {
+        body:has(#dashboard-theme[data-theme="dark"]) .campaign-table th.col-stima-lead,
+        body:has(#dashboard-theme[data-theme="dark"]) .campaign-table td.col-stima-lead,
+        body:has(#dashboard-theme[data-theme="dark"]) .campaign-table th.col-stima-spending,
+        body:has(#dashboard-theme[data-theme="dark"]) .campaign-table td.col-stima-spending,
+        body:has(#dashboard-theme[data-theme="dark"]) .campaign-table th.col-cpl-target,
+        body:has(#dashboard-theme[data-theme="dark"]) .campaign-table td.col-cpl-target {
           border-left-color:var(--table-section-border) !important;
         }
         .subtotal-row-marker,.total-row-marker { display:none; }
@@ -1348,6 +1348,10 @@ def apply_daily_spend_filter(pd, report_df, daily_df, start_date, end_date):
             result["cpl_effettivo"]
             - pd.to_numeric(result.get("cpl_target"), errors="coerce")
         )
+    from src.combined_campaigns import apply_combined_campaign_metrics
+
+    combined_records = apply_combined_campaign_metrics(result.to_dict("records"))
+    result = pd.DataFrame(combined_records, columns=result.columns)
     _update_dynamic_spend_summaries(pd, result)
     return result
 
@@ -1780,6 +1784,80 @@ def build_dashboard_table_frame(
     total_row["_row_type"] = "total"
     output_rows.append(total_row)
     return pd.DataFrame(output_rows)
+
+
+def build_campaign_table_html(display_df, row_types, excel_rows) -> str:
+    """Render the campaign table with real rowspans for combined CRM pairs."""
+    from src.combined_campaigns import COMBINED_CAMPAIGN_PAIRS
+
+    merged_columns = {
+        "Stima Lead",
+        "Delta Lead",
+        "CPL Effettivo",
+        "Delta CPL",
+    }
+    pair_by_parent = dict(COMBINED_CAMPAIGN_PAIRS)
+    row_type_values = list(row_types)
+    excel_values = list(excel_rows)
+
+    def excel_row(value) -> int | None:
+        try:
+            return int(float(value))
+        except (TypeError, ValueError):
+            return None
+
+    def column_class(column: str) -> str:
+        if column == "Funnel":
+            return "col-funnel"
+        if column == "Canale":
+            return "col-canale"
+        if column == "Campagna":
+            return "col-campagna"
+        if column == "Action":
+            return "col-action"
+        slug = column.casefold().replace(" ", "-")
+        return f"col-metric col-{slug}"
+
+    skip_cells: set[tuple[int, str]] = set()
+    rows_html: list[str] = []
+    records = display_df.to_dict("records")
+    for position, record in enumerate(records):
+        current_row = excel_row(excel_values[position])
+        child_row = pair_by_parent.get(current_row)
+        pair_is_visible = (
+            child_row is not None
+            and position + 1 < len(records)
+            and row_type_values[position] == "campaign"
+            and row_type_values[position + 1] == "campaign"
+            and excel_row(excel_values[position + 1]) == child_row
+        )
+        cells: list[str] = []
+        for column in display_df.columns:
+            if (position, column) in skip_cells:
+                continue
+            rowspan = ""
+            if pair_is_visible and column in merged_columns:
+                rowspan = ' rowspan="2"'
+                skip_cells.add((position + 1, column))
+            value = record.get(column)
+            rendered = "" if value is None else str(value)
+            cells.append(
+                f'<td class="{column_class(column)}"{rowspan}>{rendered}</td>'
+            )
+        rows_html.append("<tr>" + "".join(cells) + "</tr>")
+
+    headers = "".join(
+        f'<th class="{column_class(column)}">{html.escape(column)}</th>'
+        for column in display_df.columns
+    )
+    caption = (
+        '<caption class="sr-only">Dettaglio delle campagne e dei principali '
+        "indicatori di performance</caption>"
+    )
+    return (
+        f'<table border="0" class="dataframe campaign-table">{caption}'
+        f"<thead><tr>{headers}</tr></thead><tbody>{''.join(rows_html)}</tbody></table>"
+    )
 
 
 def build_csv_download(
@@ -2247,6 +2325,11 @@ def main() -> None:
         period_df,
         full_scope=full_scope,
     )
+    table_excel_rows = (
+        table_frame["excel_row"].copy()
+        if "excel_row" in table_frame
+        else pd.Series([None] * len(table_frame), index=table_frame.index)
+    )
     row_types = table_frame.pop("_row_type")
     display_df = table_frame[
         [column for column in DASHBOARD_TABLE_COLUMNS if column in table_frame.columns]
@@ -2367,13 +2450,10 @@ def main() -> None:
         except Exception:
             st.error("I file di esportazione non sono momentaneamente disponibili.")
 
-    table_html = display_df.to_html(
-        index=False, classes="campaign-table", border=0, escape=False
-    )
-    table_html = table_html.replace(
-        ">",
-        '><caption class="sr-only">Dettaglio delle campagne e dei principali indicatori di performance</caption>',
-        1,
+    table_html = build_campaign_table_html(
+        display_df,
+        row_types,
+        table_excel_rows,
     )
     st.markdown(
         f'<div class="campaign-table-wrap" role="region" tabindex="0" aria-label="Tabella campagne, scorrimento orizzontale">{table_html}</div>',

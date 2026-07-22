@@ -24,6 +24,10 @@ import pandas as pd
 from gspread.exceptions import APIError, SpreadsheetNotFound, WorksheetNotFound
 from gspread.utils import ValueInputOption, ValueRenderOption
 
+from src.combined_campaigns import (
+    COMBINED_CAMPAIGN_PAIRS,
+    COMBINED_CAMPAIGN_ROWS,
+)
 from src.google_sheets_client import (
     MAPPING_WORKSHEET_DEFAULT,
     _load_sheet_config,
@@ -253,26 +257,34 @@ def build_update_plan(
     if campaigns.empty:
         raise SheetWritebackError("report_data.csv non contiene righe campagna.")
 
-    grouped: dict[int, dict[str, object]] = {}
+    spend_groups: dict[int, dict[str, object]] = {}
+    lead_groups: dict[int, dict[str, object]] = {}
     for _, report_row in campaigns.iterrows():
         physical_row = _campaign_target_row(report_row, ids, names)
-        display_row = _top_row_for_cell(physical_row, 14, merges)
+        display_row = (
+            physical_row
+            if physical_row in COMBINED_CAMPAIGN_ROWS
+            else _top_row_for_cell(physical_row, 14, merges)
+        )
         spend_row = _top_row_for_cell(physical_row, 18, merges)
-        if display_row != spend_row:
+        if physical_row not in COMBINED_CAMPAIGN_ROWS and display_row != spend_row:
             raise SheetWritebackError(
                 f"Unioni incoerenti in L:V attorno alla riga {physical_row}."
             )
-        bucket = grouped.setdefault(
-            display_row,
-            {"lead": 0.0, "spend": 0.0, "names": [], "dem": False},
+        lead_bucket = lead_groups.setdefault(
+            display_row, {"lead": 0.0, "names": []}
+        )
+        spend_bucket = spend_groups.setdefault(
+            spend_row, {"spend": 0.0, "names": [], "dem": False}
         )
         lead = _number(report_row.get("lead_effettive"), "lead_effettive")
         spend = _number(report_row.get("speso_effettivo"), "speso_effettivo")
-        bucket["lead"] = float(bucket["lead"]) + (lead or 0.0)
-        bucket["spend"] = float(bucket["spend"]) + (spend or 0.0)
-        bucket["names"].append(str(report_row.get("campaign_name", "")))
+        lead_bucket["lead"] = float(lead_bucket["lead"]) + (lead or 0.0)
+        lead_bucket["names"].append(str(report_row.get("campaign_name", "")))
+        spend_bucket["spend"] = float(spend_bucket["spend"]) + (spend or 0.0)
+        spend_bucket["names"].append(str(report_row.get("campaign_name", "")))
         is_dem = str(report_row.get("campaign_name", "")).strip() in DEM_NAMES
-        bucket["dem"] = bool(bucket["dem"]) or is_dem
+        spend_bucket["dem"] = bool(spend_bucket["dem"]) or is_dem
         if is_dem:
             cpl = _number(report_row.get("cpl_target"), "cpl_target")
             if lead is None or cpl is None or spend is None:
@@ -295,7 +307,7 @@ def build_update_plan(
         PlannedUpdate("L35", [[period.elapsed_days]], "controllo periodo"),
     ]
 
-    for row, bucket in sorted(grouped.items()):
+    for row, bucket in sorted(lead_groups.items()):
         lead = float(bucket["lead"])
         updates.append(
             PlannedUpdate(
@@ -304,6 +316,9 @@ def build_update_plan(
                 "lead ufficiali: " + " + ".join(bucket["names"]),
             )
         )
+
+    pair_by_parent = dict(COMBINED_CAMPAIGN_PAIRS)
+    for row, bucket in sorted(spend_groups.items()):
         if bucket["dem"]:
             updates.append(
                 PlannedUpdate(_cell(row, 18), [[f"=N{row}*J{row}"]], "speso DEM")
@@ -314,7 +329,17 @@ def build_update_plan(
                 PlannedUpdate(_cell(row, 18), [[spend]], "speso Ads ufficiale")
             )
         include_lead_plan = row not in {2, 4, 6}
-        for column, formula in _derived_formulas(row, include_lead_plan).items():
+        formulas = _derived_formulas(row, include_lead_plan)
+        child_row = pair_by_parent.get(row)
+        if child_row is not None:
+            formulas.update(
+                {
+                    15: f'=IF(OR(N{row}="";M{row}="");"";SUM(N{row}:N{child_row})-M{row})',
+                    21: f'=IFERROR(R{row}/SUM(N{row}:N{child_row}))',
+                    22: f'=IF(OR(U{row}="";J{row}="");"";U{row}-J{row})',
+                }
+            )
+        for column, formula in formulas.items():
             updates.append(PlannedUpdate(_cell(row, column), [[formula]], "formula"))
 
     for label, row in SUBTOTAL_ROWS.items():
@@ -387,6 +412,12 @@ def build_update_plan(
         if name in {*SUBTOTAL_ROWS, "TOTALE GENERALE"}:
             expected[f"{name}:lead"] = float(_number(row.get("lead_effettive"), "lead") or 0)
             expected[f"{name}:spend"] = float(_number(row.get("speso_effettivo"), "spend") or 0)
+    for _, row in campaigns.iterrows():
+        excel_row = int(float(row.get("excel_row") or 0))
+        if excel_row in COMBINED_CAMPAIGN_ROWS:
+            expected[f"campaign:{excel_row}:lead"] = float(
+                _number(row.get("lead_effettive"), "lead") or 0
+            )
     return period, updates, expected
 
 
@@ -396,6 +427,28 @@ def _manual_sheet_metadata(spreadsheet: gspread.Spreadsheet) -> tuple[list[dict]
         if sheet.get("properties", {}).get("title") == TARGET_WORKSHEET:
             return list(sheet.get("merges", [])), sheet.get("properties", {})
     raise SheetWritebackError(f"Worksheet non trovato: {TARGET_WORKSHEET}")
+
+
+def _combined_lead_merges(merges: list[dict]) -> list[dict]:
+    expected = {
+        (parent - 1, child, 13, 14)
+        for parent, child in COMBINED_CAMPAIGN_PAIRS
+    }
+    return [
+        merge
+        for merge in merges
+        if (
+            int(merge.get("startRowIndex", -1)),
+            int(merge.get("endRowIndex", -1)),
+            int(merge.get("startColumnIndex", -1)),
+            int(merge.get("endColumnIndex", -1)),
+        ) in expected
+    ]
+
+
+def _without_combined_lead_merges(merges: list[dict]) -> list[dict]:
+    targets = _combined_lead_merges(merges)
+    return [merge for merge in merges if merge not in targets]
 
 
 def _ensure_initial_backup(
@@ -418,7 +471,7 @@ def _ensure_initial_backup(
 def _verify_results(
     worksheet: gspread.Worksheet,
     protected_before: list[list[object]],
-    merges_before: list[dict],
+    expected_merges: list[dict],
     properties_before: dict,
     expected: dict[str, float],
     spreadsheet: gspread.Spreadsheet,
@@ -429,8 +482,8 @@ def _verify_results(
     if _padded(protected_before, 66, 11) != _padded(protected_after, 66, 11):
         raise SheetWritebackError("Verifica fallita: una cella in A:K è cambiata.")
     merges_after, properties_after = _manual_sheet_metadata(spreadsheet)
-    if merges_before != merges_after:
-        raise SheetWritebackError("Verifica fallita: le celle unite sono cambiate.")
+    if expected_merges != merges_after:
+        raise SheetWritebackError("Verifica fallita: unioni celle inattese.")
     # Creating the required backup can move the tab index; that is not a
     # structural change to the source worksheet itself.
     structural_keys = ("gridProperties", "hidden", "sheetId")
@@ -456,6 +509,16 @@ def _verify_results(
             ):
                 raise SheetWritebackError(
                     f"Verifica {key} fallita: {actual} != {expected[key]}"
+                )
+    for parent, child in COMBINED_CAMPAIGN_PAIRS:
+        for row in (parent, child):
+            key = f"campaign:{row}:lead"
+            actual = _number(values[row - 1][13], key)
+            if key not in expected or actual is None or not math.isclose(
+                actual, expected[key], rel_tol=0, abs_tol=0.02
+            ):
+                raise SheetWritebackError(
+                    f"Verifica {key} fallita: {actual} != {expected.get(key)}"
                 )
 
 
@@ -494,6 +557,8 @@ def run_writeback(
     period, updates, expected = build_update_plan(
         frame, values, merges, expected_end_date=expected_end_date
     )
+    lead_merges_to_remove = _combined_lead_merges(merges)
+    expected_merges = _without_combined_lead_merges(merges)
     result: dict[str, object] = {
         "status": "dry-run" if dry_run else "updated",
         "worksheet": TARGET_WORKSHEET,
@@ -504,6 +569,14 @@ def run_writeback(
         "elapsed_days": period.elapsed_days,
         "updates": len(updates),
         "ranges": [update.range for update in updates],
+        "unmerged_lead_ranges": [
+            f"N{parent}:N{child}" for parent, child in COMBINED_CAMPAIGN_PAIRS
+            if any(
+                int(merge.get("startRowIndex", -1)) == parent - 1
+                and int(merge.get("endRowIndex", -1)) == child
+                for merge in lead_merges_to_remove
+            )
+        ],
     }
     if dry_run:
         result["backup"] = "not-created-in-dry-run"
@@ -511,6 +584,15 @@ def run_writeback(
 
     backup_name = _ensure_initial_backup(spreadsheet, worksheet)
     try:
+        if lead_merges_to_remove:
+            spreadsheet.batch_update(
+                {
+                    "requests": [
+                        {"unmergeCells": {"range": merge}}
+                        for merge in lead_merges_to_remove
+                    ]
+                }
+            )
         worksheet.batch_update(
             [update.as_gspread() for update in updates],
             value_input_option=ValueInputOption.user_entered,
@@ -518,7 +600,7 @@ def run_writeback(
         _verify_results(
             worksheet,
             protected_before,
-            merges,
+            expected_merges,
             properties,
             expected,
             spreadsheet,

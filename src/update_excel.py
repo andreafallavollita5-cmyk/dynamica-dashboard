@@ -21,6 +21,7 @@ from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 
 from src.report_groups import CLIENT_GROUPS, SUMMARY_FIELDS, client_subtotal_group
+from src.combined_campaigns import COMBINED_CAMPAIGN_PAIRS
 from src.dates import weekdays_in_month
 
 
@@ -213,13 +214,28 @@ def _prepare_dataframe(report_df: pd.DataFrame) -> pd.DataFrame:
     frame["_funnel_order"] = pd.factorize(frame.get("funnel", ""), sort=False)[0]
     frame["_original_order"] = range(len(frame))
     frame["_platform_sort"] = frame.get("platform", "").fillna("").astype(str).str.casefold()
+    frame["_excel_row_sort"] = pd.to_numeric(
+        frame.get("excel_row"), errors="coerce"
+    ).fillna(float("inf"))
     frame["_campaign_sort"] = frame.get("campaign_name", "").fillna("").astype(str).str.casefold()
     frame = frame.sort_values(
-        ["_funnel_order", "_platform_sort", "_campaign_sort", "_original_order"],
+        [
+            "_funnel_order",
+            "_platform_sort",
+            "_excel_row_sort",
+            "_campaign_sort",
+            "_original_order",
+        ],
         kind="stable",
     )
     return frame.drop(
-        columns=["_funnel_order", "_original_order", "_platform_sort", "_campaign_sort"]
+        columns=[
+            "_funnel_order",
+            "_original_order",
+            "_platform_sort",
+            "_excel_row_sort",
+            "_campaign_sort",
+        ]
     ).reset_index(drop=True)
 
 
@@ -232,6 +248,31 @@ def _copy_row_style(ws, source_row: int, target_row: int) -> None:
         target.alignment = copy(source.alignment)
         target.number_format = source.number_format
         target.protection = copy(source.protection)
+
+
+def _merge_combined_campaign_metrics(ws, output_rows: dict[int, int]) -> None:
+    """Merge planned/delta/CPL cells while leaving effective leads separate."""
+    for parent_excel_row, child_excel_row in COMBINED_CAMPAIGN_PAIRS:
+        parent = output_rows.get(parent_excel_row)
+        child = output_rows.get(child_excel_row)
+        if parent is None or child is None:
+            continue
+        if child != parent + 1:
+            raise ValueError(
+                "Le campagne CRM combinate non sono adiacenti nell'export Excel."
+            )
+        for column in (11, 12, 13, 15, 21, 22):
+            ws.merge_cells(
+                start_row=parent,
+                start_column=column,
+                end_row=child,
+                end_column=column,
+            )
+            ws.cell(parent, column).alignment = Alignment(
+                horizontal=ws.cell(parent, column).alignment.horizontal,
+                vertical="center",
+                wrap_text=ws.cell(parent, column).alignment.wrap_text,
+            )
 
 
 def _campaign_id(row: pd.Series) -> str:
@@ -594,6 +635,7 @@ def generate_client_excel(
         _copy_row_style(report_ws, FIRST_DATA_ROW, row_number)
 
     current_row = FIRST_DATA_ROW
+    campaign_output_rows: dict[int, int] = {}
     for group_slug, funnel_value, group in funnel_groups:
         for _, row in group.iterrows():
             spending_daily = _as_number(row.get("stima_spending_giornaliera"))
@@ -628,6 +670,9 @@ def generate_client_excel(
                 _as_action_text(row.get("action")),
             ]
             _write_report_values(report_ws, current_row, values)
+            excel_row = _as_number(row.get("excel_row"))
+            if excel_row is not None:
+                campaign_output_rows[int(excel_row)] = current_row
             report_ws.cell(current_row, 5).alignment = Alignment(
                 horizontal=report_ws.cell(current_row, 5).alignment.horizontal,
                 vertical="top",
@@ -664,6 +709,8 @@ def generate_client_excel(
         report_ws.merge_cells(start_row=current_row, start_column=1, end_row=current_row, end_column=5)
         _style_subtotal(report_ws, current_row)
         current_row += 1
+
+    _merge_combined_campaign_metrics(report_ws, campaign_output_rows)
 
     _copy_row_style(report_ws, total_row, total_row)
     official_total = official_frame[official_frame.get("row_type", "") == "total"]

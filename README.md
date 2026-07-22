@@ -133,6 +133,13 @@ giorni di calendario.
 CSV ed Excel scaricati includono le righe `TOT Area Clienti`, `TOT Lead Veloce`,
 `TOT DEM` e `TOTALE GENERALE` relative alle date selezionate.
 
+Le tre coppie storica/`QUINTO DIGITALE` identificate dalle righe planning
+`9/10`, `11/12` e `13/14` restano visibili come campagne separate. Per ogni
+coppia, Stima Lead, Delta Lead, CPL Effettivo e Delta CPL sono metriche uniche
+calcolate sulla somma della coppia; le Lead Effettive restano invece separate
+per campagna. Dashboard, CSV, Excel e write-back Google Sheet applicano la
+stessa regola, basata sulle righe planning e non sul colore delle celle.
+
 ## Verifica locale API
 
 Sul solo PC aziendale impostare nel file `.env`:

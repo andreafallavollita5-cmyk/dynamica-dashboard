@@ -5,7 +5,11 @@ from datetime import date
 
 import pandas as pd
 
-from src.writeback_google_sheet import SheetWritebackError, build_update_plan
+from src.writeback_google_sheet import (
+    SheetWritebackError,
+    _without_combined_lead_merges,
+    build_update_plan,
+)
 
 
 def report_row(**overrides):
@@ -32,6 +36,10 @@ def sheet_values():
     rows[1][4] = "Campaign A"
     rows[2][3] = "222"
     rows[2][4] = "Campaign B"
+    rows[8][3] = "22822606735"
+    rows[8][4] = "DYN_VELOCE Cessione del Quinto [Esatta]"
+    rows[9][3] = "23990314506"
+    rows[9][4] = "DYN_VELOCE Cessione del Quinto [Esatta] QUINTO DIGITALE"
     rows[24][4] = "DEM DYNAMICS ADVICE ME"
     rows[25][4] = "DEM DIGITOO"
     rows[26][4] = "DEM TIG"
@@ -133,6 +141,59 @@ class WritebackPlanTests(unittest.TestCase):
         )
         with self.assertRaisesRegex(SheetWritebackError, "senza ID"):
             build_update_plan(frame, sheet_values(), [], date(2026, 7, 17))
+
+    def test_combined_pair_keeps_leads_separate_and_uses_combined_formulas(self):
+        frame = pd.DataFrame(
+            [
+                report_row(
+                    excel_row=9,
+                    campaign_name="DYN_VELOCE Cessione del Quinto [Esatta]",
+                    google_campaign_id="22822606735",
+                    lead_effettive="61",
+                    speso_effettivo="5490",
+                    cpl_target="38.5",
+                ),
+                report_row(
+                    excel_row=10,
+                    campaign_name=(
+                        "DYN_VELOCE Cessione del Quinto [Esatta] QUINTO DIGITALE"
+                    ),
+                    google_campaign_id="23990314506",
+                    lead_effettive="92",
+                    speso_effettivo="",
+                    cpl_target="",
+                ),
+                *official_rows(),
+            ]
+        )
+        merges = [
+            {
+                "sheetId": 1,
+                "startRowIndex": 8,
+                "endRowIndex": 10,
+                "startColumnIndex": 13,
+                "endColumnIndex": 14,
+            },
+            {
+                "sheetId": 1,
+                "startRowIndex": 8,
+                "endRowIndex": 10,
+                "startColumnIndex": 17,
+                "endColumnIndex": 18,
+            },
+        ]
+
+        _, updates, expected = build_update_plan(
+            frame, sheet_values(), merges, date(2026, 7, 17)
+        )
+        by_range = {update.range: update.values[0][0] for update in updates}
+        self.assertEqual(by_range["N9"], 61)
+        self.assertEqual(by_range["N10"], 92)
+        self.assertEqual(by_range["O9"], '=IF(OR(N9="";M9="");"";SUM(N9:N10)-M9)')
+        self.assertEqual(by_range["U9"], '=IFERROR(R9/SUM(N9:N10))')
+        self.assertEqual(expected["campaign:9:lead"], 61)
+        self.assertEqual(expected["campaign:10:lead"], 92)
+        self.assertEqual(len(_without_combined_lead_merges(merges)), 1)
 
 
 if __name__ == "__main__":

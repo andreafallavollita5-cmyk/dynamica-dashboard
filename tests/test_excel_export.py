@@ -336,13 +336,61 @@ class ClientExcelExportTests(unittest.TestCase):
         source = (ROOT / "app.py").read_text(encoding="utf-8")
         self.assertIn("--table-section-border: #3a4454", source)
         self.assertIn("--table-section-border: #ffffff", source)
-        for column in (4, 7, 10):
-            self.assertIn(f".campaign-table th:nth-child({column})", source)
-            self.assertIn(f".campaign-table td:nth-child({column})", source)
+        for css_class in ("col-stima-lead", "col-stima-spending", "col-cpl-target"):
+            self.assertIn(f".campaign-table th.{css_class}", source)
+            self.assertIn(f".campaign-table td.{css_class}", source)
         self.assertIn(
             "border-left:2px solid var(--table-section-border) !important",
             source,
         )
+
+    def test_combined_campaign_cells_are_merged_except_effective_leads(self):
+        parent = report_row(
+            excel_row=9,
+            campaign_name="DYN_VELOCE Cessione del Quinto [Esatta]",
+            lead_effettive=61,
+            stima_lead_progressiva=128,
+            delta_lead=25,
+            cpl_effettivo=5490 / 153,
+            delta_cpl=5490 / 153 - 38.5,
+            cpl_target=38.5,
+            speso_effettivo=5490,
+        )
+        child = report_row(
+            excel_row=10,
+            campaign_name=(
+                "DYN_VELOCE Cessione del Quinto [Esatta] QUINTO DIGITALE"
+            ),
+            investimento_media=None,
+            stima_lead=None,
+            stima_lead_giornaliere=None,
+            stima_lead_progressiva=None,
+            lead_effettive=92,
+            delta_lead=None,
+            speso_effettivo=None,
+            cpl_target=None,
+            cpl_effettivo=None,
+            delta_cpl=None,
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            latest = self.generate(make_frame([parent, child]), directory)
+            workbook = load_workbook(latest, data_only=True)
+            report = workbook["Report Cliente"]
+            by_name = {
+                report.cell(row, 5).value: row
+                for row in range(5, report.max_row + 1)
+                if report.cell(row, 5).value
+            }
+            first = by_name[parent["campaign_name"]]
+            second = by_name[child["campaign_name"]]
+            self.assertEqual(second, first + 1)
+            merged = {str(item) for item in report.merged_cells.ranges}
+            for column in ("K", "L", "M", "O", "U", "V"):
+                self.assertIn(f"{column}{first}:{column}{second}", merged)
+            self.assertNotIn(f"N{first}:N{second}", merged)
+            self.assertEqual(report.cell(first, 14).value, 61)
+            self.assertEqual(report.cell(second, 14).value, 92)
+            workbook.close()
 
 
 if __name__ == "__main__":
