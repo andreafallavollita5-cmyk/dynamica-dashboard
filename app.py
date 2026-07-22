@@ -1791,7 +1791,7 @@ def build_dashboard_table_frame(
 
 
 def build_campaign_table_html(display_df, row_types, excel_rows) -> str:
-    """Render the campaign table with real rowspans for combined CRM pairs."""
+    """Render combined CRM pairs with blank continuation cells and full grid lines."""
     from src.combined_campaigns import COMBINED_CAMPAIGN_PAIRS
 
     merged_columns = {
@@ -1822,7 +1822,7 @@ def build_campaign_table_html(display_df, row_types, excel_rows) -> str:
         slug = column.casefold().replace(" ", "-")
         return f"col-metric col-{slug}"
 
-    skip_cells: set[tuple[int, str]] = set()
+    blank_cells: set[tuple[int, str]] = set()
     rows_html: list[str] = []
     records = display_df.to_dict("records")
     for position, record in enumerate(records):
@@ -1837,17 +1837,11 @@ def build_campaign_table_html(display_df, row_types, excel_rows) -> str:
         )
         cells: list[str] = []
         for column in display_df.columns:
-            if (position, column) in skip_cells:
-                continue
-            rowspan = ""
             if pair_is_visible and column in merged_columns:
-                rowspan = ' rowspan="2"'
-                skip_cells.add((position + 1, column))
-            value = record.get(column)
+                blank_cells.add((position + 1, column))
+            value = None if (position, column) in blank_cells else record.get(column)
             rendered = "" if value is None else str(value)
-            cells.append(
-                f'<td class="{column_class(column)}"{rowspan}>{rendered}</td>'
-            )
+            cells.append(f'<td class="{column_class(column)}">{rendered}</td>')
         rows_html.append("<tr>" + "".join(cells) + "</tr>")
 
     headers = "".join(

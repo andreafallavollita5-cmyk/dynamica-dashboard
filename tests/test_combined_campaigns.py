@@ -44,7 +44,7 @@ class CombinedCampaignTests(unittest.TestCase):
         self.assertAlmostEqual(result[0]["delta_cpl"], 5490 / 153 - 38.5)
         self.assertIsNone(result[1]["cpl_effettivo"])
 
-    def test_dashboard_uses_four_real_rowspans_for_a_visible_pair(self):
+    def test_dashboard_keeps_full_grid_and_blanks_combined_continuation_cells(self):
         display = pd.DataFrame(
             [
                 {
@@ -70,10 +70,12 @@ class CombinedCampaignTests(unittest.TestCase):
             display, ["campaign", "campaign"], [9, 10]
         )
 
-        self.assertEqual(rendered.count('rowspan="2"'), 4)
+        self.assertNotIn('rowspan="2"', rendered)
         self.assertIn(">61</td>", rendered)
         self.assertIn(">92</td>", rendered)
-        self.assertEqual(rendered.count("col-stima-lead"), 2)
+        self.assertEqual(rendered.count("col-stima-lead"), 3)
+        self.assertEqual(rendered.count(">128</td>"), 1)
+        self.assertIn('<td class="col-metric col-stima-lead"></td>', rendered)
 
 
 if __name__ == "__main__":
