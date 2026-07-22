@@ -336,9 +336,15 @@ class ClientExcelExportTests(unittest.TestCase):
         source = (ROOT / "app.py").read_text(encoding="utf-8")
         self.assertIn("--table-section-border: #3a4454", source)
         self.assertIn("--table-section-border: #ffffff", source)
-        for css_class in ("col-stima-lead", "col-stima-spending", "col-cpl-target"):
+        for css_class in ("col-stima-spending", "col-cpl-target"):
             self.assertIn(f".campaign-table th.{css_class}", source)
             self.assertIn(f".campaign-table td.{css_class}", source)
+        self.assertIn(".campaign-table th.col-campagna", source)
+        self.assertIn(".campaign-table td.col-campagna", source)
+        self.assertIn(
+            "border-right:2px solid var(--table-section-border) !important",
+            source,
+        )
         self.assertIn(
             "border-left:2px solid var(--table-section-border) !important",
             source,

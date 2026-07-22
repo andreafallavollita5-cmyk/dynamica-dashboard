@@ -783,16 +783,20 @@ def apply_style(st) -> None:
         }
         .campaign-table tr:has(.subtotal-row-marker) .delta-value,
         .campaign-table tr:has(.total-row-marker) .delta-value { color:inherit !important; }
-        .campaign-table th.col-stima-lead,
-        .campaign-table td.col-stima-lead,
+        .campaign-table th.col-campagna,
+        .campaign-table td.col-campagna {
+          border-right:2px solid var(--table-section-border) !important;
+        }
         .campaign-table th.col-stima-spending,
         .campaign-table td.col-stima-spending,
         .campaign-table th.col-cpl-target,
         .campaign-table td.col-cpl-target {
           border-left:2px solid var(--table-section-border) !important;
         }
-        body:has(#dashboard-theme[data-theme="dark"]) .campaign-table th.col-stima-lead,
-        body:has(#dashboard-theme[data-theme="dark"]) .campaign-table td.col-stima-lead,
+        body:has(#dashboard-theme[data-theme="dark"]) .campaign-table th.col-campagna,
+        body:has(#dashboard-theme[data-theme="dark"]) .campaign-table td.col-campagna {
+          border-right-color:var(--table-section-border) !important;
+        }
         body:has(#dashboard-theme[data-theme="dark"]) .campaign-table th.col-stima-spending,
         body:has(#dashboard-theme[data-theme="dark"]) .campaign-table td.col-stima-spending,
         body:has(#dashboard-theme[data-theme="dark"]) .campaign-table th.col-cpl-target,
