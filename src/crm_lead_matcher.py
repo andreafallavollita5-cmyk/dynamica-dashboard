@@ -107,25 +107,18 @@ def match_crm_leads(
         if normalize_text(lead.get("campaign_crm")) == AREA_CLIENTI_CAMPAIGN
     ]
     area_ids = {str(lead["lead_id"]) for lead in area_leads}
-    if area_leads and len(area_rules) != 5:
-        raise ValueError("La ripartizione Area Clienti richiede esattamente 5 righe.")
+    if area_leads and not area_rules:
+        raise ValueError("Il mapping Area Clienti non contiene righe valide.")
     if area_rules:
-        base, remainder = divmod(len(area_leads), len(area_rules))
-        cursor = 0
-        for position, rule in enumerate(area_rules):
-            count = base + (1 if position < remainder else 0)
-            allocations[rule["excel_row"]] += count
-            methods[rule["excel_row"]] = "area_clienti_uniform"
-            for lead in area_leads[cursor : cursor + count]:
-                normalized_rows.append(
-                    {
-                        **lead,
-                        "match_status": "matched",
-                        "matched_excel_row": rule["excel_row"],
-                        "lead_allocation_method": "area_clienti_uniform",
-                    }
-                )
-            cursor += count
+        for lead in area_leads:
+            normalized_rows.append(
+                {
+                    **lead,
+                    "match_status": "matched",
+                    "matched_excel_row": None,
+                    "lead_allocation_method": "area_clienti_total",
+                }
+            )
 
     for lead in leads:
         if str(lead["lead_id"]) in area_ids:

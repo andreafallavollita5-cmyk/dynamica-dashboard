@@ -122,8 +122,10 @@ ID campagna e riga del planning. Non contiene Id Lead, UTM, date/ore individuali
 o altri dati personali CRM.
 
 La dashboard usa questo file per ricalcolare campagne, KPI, subtotali e totale
-su qualsiasi intervallo selezionato. Area Clienti viene ripartita sulle cinque
-righe dopo aver sommato l'intero intervallo; lo speso DEM resta `lead x CPL`.
+su qualsiasi intervallo selezionato. Le lead CRM `Area Clienti` non vengono
+distribuite sulle cinque campagne: le righe campagna mantengono spesa e dati di
+pianificazione, mentre lead effettive, CPL e delta dipendenti dalle lead sono
+esposti una sola volta in `TOT Area Clienti`. Lo speso DEM resta `lead x CPL`.
 Per le DEM, la stima spending distribuisce il budget mensile soltanto sui giorni
 da lunedi a venerdi: sabato e domenica sono esclusi, mentre le festivita
 infrasettimanali restano incluse. Le altre campagne continuano a usare tutti i

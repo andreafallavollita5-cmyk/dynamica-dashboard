@@ -1256,24 +1256,13 @@ def apply_daily_spend_filter(pd, report_df, daily_df, start_date, end_date):
             ],
             key=lambda index: int(float(result.at[index, "excel_row"])),
         )
-        if area_total and len(area_indexes) != 5:
-            raise ValueError(
-                "La ripartizione Area Clienti richiede tutte le cinque righe."
-            )
-        area_allocations: dict[int, int] = {}
-        if area_indexes:
-            quota, remainder = divmod(area_total, len(area_indexes))
-            area_allocations = {
-                index: quota + (1 if position < remainder else 0)
-                for position, index in enumerate(area_indexes)
-            }
         dynamic_leads: dict[int, float | None] = {}
         for index, row in result.iterrows():
             excel_row = clean_id(row.get("excel_row"))
             if not excel_row:
                 dynamic_leads[index] = None
-            elif index in area_allocations:
-                dynamic_leads[index] = float(area_allocations[index])
+            elif index in area_indexes:
+                dynamic_leads[index] = None
             else:
                 dynamic_leads[index] = float(normal_counts.get(excel_row, 0))
         result["lead_effettive"] = pd.Series(dynamic_leads)
@@ -1446,6 +1435,16 @@ def build_period_report_frame(
     )
 
     summaries: list[dict] = []
+    selected_daily = daily_df[
+        (daily_df["date"] >= selected_start) & (daily_df["date"] <= selected_end)
+    ]
+    area_total = None
+    if {"source", "leads"}.issubset(selected_daily.columns):
+        area_total = float(pd.to_numeric(
+            selected_daily.loc[
+                selected_daily["source"] == "crm_area_clienti", "leads"
+            ], errors="coerce"
+        ).fillna(0).sum())
     for slug, label in CLIENT_GROUPS:
         group = dynamic[
             dynamic.apply(
@@ -1457,6 +1456,8 @@ def build_period_report_frame(
         summary = _summary_row(
             group.to_dict("records"), f"TOT {label}", "subtotal"
         )
+        if slug == "area_clienti" and area_total is not None:
+            summary["lead_effettive"] = area_total
         source = official[official["funnel"].astype(str) == f"TOT {label}"]
         if len(source.index) == 1:
             source_row = source.iloc[0]
@@ -1488,12 +1489,28 @@ def build_period_report_frame(
                 summary["lead_effettive"] - summary["stima_lead_progressiva"]
                 if summary.get("lead_effettive") is not None else None
             )
+        if slug == "area_clienti" and area_total is not None:
+            summary["cpl_effettivo"] = (
+                summary.get("speso_effettivo") / area_total
+                if area_total and summary.get("speso_effettivo") is not None
+                else None
+            )
+            summary["delta_cpl"] = (
+                summary["cpl_effettivo"] - summary["cpl_target"]
+                if summary.get("cpl_effettivo") is not None
+                and summary.get("cpl_target") is not None else None
+            )
         summary["start_date"] = selected_start.isoformat()
         summary["end_date"] = selected_end.isoformat()
         summaries.append(summary)
 
     total = _summary_row(
         dynamic.to_dict("records"), "TOTALE GENERALE", "total"
+    )
+    subtotal_leads = [summary.get("lead_effettive") for summary in summaries]
+    total["lead_effettive"] = (
+        sum(float(value) for value in subtotal_leads if value is not None)
+        if any(value is not None for value in subtotal_leads) else None
     )
     for field in ("stima_pratiche", "stima_lead", "stima_lead_giornaliere"):
         values = [summary.get(field) for summary in summaries]

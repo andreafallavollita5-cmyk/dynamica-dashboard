@@ -378,7 +378,7 @@ class SpendDailyTests(unittest.TestCase):
         self.assertEqual(subtotal["lead_effettive"], 5)
         self.assertEqual(total["speso_effettivo"], 27)
 
-    def test_area_clienti_is_allocated_after_selected_date_filter(self):
+    def test_area_clienti_leads_stay_only_in_selected_period_total(self):
         report = pd.DataFrame(
             [
                 {
@@ -397,14 +397,22 @@ class SpendDailyTests(unittest.TestCase):
                     "date": date(2026, 7, 2), "source": "crm_area_clienti",
                     "excel_row": "", "campaign_id": "",
                     "campaign_name": "AREA CLIENTI", "spend": pd.NA,
-                    "leads": 7, "lead_allocation_method": "area_clienti_uniform",
+                    "leads": 7, "lead_allocation_method": "area_clienti_total",
                 }
             ]
         )
-        result = apply_daily_spend_filter(
+        result = build_period_report_frame(
             pd, report, daily, date(2026, 7, 2), date(2026, 7, 2)
         )
-        self.assertEqual(result["lead_effettive"].tolist(), [2, 2, 1, 1, 1])
+        campaigns = result[result["row_type"] == "campaign"]
+        subtotal = result[
+            (result["row_type"] == "subtotal")
+            & (result["campaign_name"] == "TOT Area Clienti")
+        ].iloc[0]
+        total = result[result["row_type"] == "total"].iloc[0]
+        self.assertTrue(campaigns["lead_effettive"].isna().all())
+        self.assertEqual(subtotal["lead_effettive"], 7)
+        self.assertEqual(total["lead_effettive"], 7)
 
     def test_downloaded_excel_matches_selected_period(self):
         metadata = {

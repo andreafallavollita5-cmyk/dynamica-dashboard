@@ -298,6 +298,7 @@ def build_report_rows(
     report_date: date | None = None,
     crm_leads_by_excel_row: dict[int, int] | None = None,
     lead_allocation_methods: dict[int, str] | None = None,
+    area_clienti_total: float | None = None,
 ) -> list[dict]:
     """Pure merge/calculation function, kept injectable for technical mocks."""
     report_date = report_date or date.today()
@@ -321,8 +322,11 @@ def build_report_rows(
         investimento = _number(manual.get("investimento_media"))
         stima_lead = _number(manual.get("stima_lead"))
         excel_row = int(manual.get("excel_row") or 0)
+        is_area_clienti = client_subtotal_group(manual) == "area_clienti"
         lead_effettive = (
-            _number(crm_leads_by_excel_row.get(excel_row, 0))
+            None
+            if crm_mode and is_area_clienti
+            else _number(crm_leads_by_excel_row.get(excel_row, 0))
             if crm_mode
             else _number(manual.get("lead_effettive_manual"))
         )
@@ -445,7 +449,9 @@ def build_report_rows(
                     else "manual:no_ads_source"
                 ),
                 "lead_allocation_method": lead_allocation_methods.get(
-                    excel_row, "crm_mapping"
+                    excel_row,
+                    "area_clienti_total"
+                    if crm_mode and is_area_clienti else "crm_mapping",
                 ),
             }
         )
@@ -457,6 +463,7 @@ def build_report_rows(
             manual_rows=manual_rows,
             days_in_month=days_in_month,
             elapsed_days=elapsed_days,
+            area_clienti_total=area_clienti_total,
         )
 
     totals = {
@@ -542,6 +549,7 @@ def _append_official_rows(
     manual_rows: list[dict] | None = None,
     days_in_month: int | None = None,
     elapsed_days: int | None = None,
+    area_clienti_total: float | None = None,
 ) -> list[dict]:
     output = list(campaign_rows)
     summaries: list[dict] = []
@@ -573,10 +581,22 @@ def _append_official_rows(
                             )
                 if cpl_target is not None:
                     summary["cpl_target"] = cpl_target
-                    if summary.get("cpl_effettivo") is not None:
-                        summary["delta_cpl"] = (
-                            summary["cpl_effettivo"] - cpl_target
-                        )
+                summary["lead_effettive"] = area_clienti_total
+                summary["delta_lead"] = (
+                    area_clienti_total - summary["stima_lead_progressiva"]
+                    if area_clienti_total is not None
+                    and summary.get("stima_lead_progressiva") is not None
+                    else None
+                )
+                summary["cpl_effettivo"] = safe_divide(
+                    summary.get("speso_effettivo"), area_clienti_total
+                )
+                summary["delta_cpl"] = (
+                    summary["cpl_effettivo"] - summary["cpl_target"]
+                    if summary.get("cpl_effettivo") is not None
+                    and summary.get("cpl_target") is not None
+                    else None
+                )
             summaries.append(summary)
             output.append(summary)
     total = _summary_row(campaign_rows, "TOTALE GENERALE", "total")
@@ -586,6 +606,14 @@ def _append_official_rows(
         values = [summary.get(field) for summary in summaries]
         if any(value is not None for value in values):
             total[field] = sum(value or 0 for value in values)
+    summary_leads = [summary.get("lead_effettive") for summary in summaries]
+    total["lead_effettive"] = (
+        sum(value or 0 for value in summary_leads)
+        if any(value is not None for value in summary_leads) else None
+    )
+    total["cpl_effettivo"] = safe_divide(
+        total.get("speso_effettivo"), total.get("lead_effettive")
+    )
     if total.get("lead_effettive") is not None and total.get("stima_lead_progressiva") is not None:
         total["delta_lead"] = total["lead_effettive"] - total["stima_lead_progressiva"]
     if total.get("investimento_media") is not None and total.get("stima_lead"):
@@ -618,7 +646,7 @@ def _pseudonymized_crm_audit(rows: list[dict]) -> list[dict]:
 
 
 def _previous_campaign_rows(path: Path, start_date: date) -> list[dict]:
-    """Read only campaign rows from the latest file for the same month."""
+    """Read the latest report rows for the same month."""
     if not path.exists():
         return []
     try:
@@ -629,8 +657,7 @@ def _previous_campaign_rows(path: Path, start_date: date) -> list[dict]:
     return [
         row
         for row in rows
-        if str(row.get("row_type") or "campaign") == "campaign"
-        and str(row.get("start_date") or "") == start_date.isoformat()
+        if str(row.get("start_date") or "") == start_date.isoformat()
     ]
 
 
@@ -669,6 +696,13 @@ def _previous_crm_allocations(
         allocations[excel_row] = previous_by_row.get(excel_row)
         methods[excel_row] = "crm_stale"
     return allocations, methods
+
+
+def _previous_area_clienti_total(previous_rows: list[dict]) -> float | None:
+    for row in previous_rows:
+        if str(row.get("campaign_name") or "").strip() == "TOT Area Clienti":
+            return _number(row.get("lead_effettive"))
+    return None
 
 
 def build_report_data(
@@ -717,6 +751,7 @@ def build_report_data(
     crm_file: str | None = None
     crm_source: str | None = None
     crm_fetch_succeeded = False
+    area_clienti_total: float | None = None
     if crm_enabled:
         try:
             if dynamics_mode:
@@ -739,11 +774,17 @@ def build_report_data(
             crm_allocations, allocation_methods, crm_normalized = match_crm_leads(
                 crm_leads, manual_rows, mapping_rows
             )
+            area_clienti_total = float(sum(
+                1 for row in crm_normalized
+                if row.get("match_status") == "matched"
+                and row.get("lead_allocation_method") == "area_clienti_total"
+            ))
             crm_fetch_succeeded = True
         except Exception:
             crm_allocations, allocation_methods = _previous_crm_allocations(
                 previous_rows, manual_rows
             )
+            area_clienti_total = _previous_area_clienti_total(previous_rows)
             crm_status = "stale" if previous_rows else "unavailable"
             source_label = "Dynamics" if dynamics_mode else "Export CRM"
             crm_error = (
@@ -797,6 +838,7 @@ def build_report_data(
         google_status=google_status, meta_status=meta_status, report_date=today,
         crm_leads_by_excel_row=crm_allocations,
         lead_allocation_methods=allocation_methods,
+        area_clienti_total=area_clienti_total,
     )
     if crm_status in {"stale", "unavailable"}:
         for row in rows:

@@ -146,7 +146,7 @@ def build_daily_metric_rows(
             continue
         created = pd.Timestamp(lead["created_at"]).date().isoformat()
         method = str(lead.get("lead_allocation_method") or "")
-        if method == "area_clienti_uniform":
+        if method in {"area_clienti_total", "area_clienti_uniform"}:
             area_counts[created] = area_counts.get(created, 0) + 1
             continue
         excel_row = int(lead["matched_excel_row"])
@@ -185,7 +185,7 @@ def build_daily_metric_rows(
                 "spend": "",
                 "leads": count,
                 "monthly_lead_target": "",
-                "lead_allocation_method": "area_clienti_uniform",
+                "lead_allocation_method": "area_clienti_total",
             }
         )
     for label, target in sorted((planning_targets or {}).items()):

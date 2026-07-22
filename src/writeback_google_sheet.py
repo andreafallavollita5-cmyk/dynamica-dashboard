@@ -326,6 +326,22 @@ def build_update_plan(
         for column, formula in _summary_formulas(row, *source).items():
             updates.append(PlannedUpdate(_cell(row, column), [[formula]], label))
 
+    area_official = frame.loc[
+        (frame["row_type"] == "subtotal")
+        & (frame["campaign_name"].astype(str) == "TOT Area Clienti")
+    ]
+    if len(area_official.index) != 1:
+        raise SheetWritebackError(
+            "Riga ufficiale TOT Area Clienti mancante o duplicata."
+        )
+    area_leads = _number(
+        area_official.iloc[0].get("lead_effettive"), "TOT Area Clienti lead"
+    )
+    updates = [update for update in updates if update.range != "N7"]
+    updates.append(
+        PlannedUpdate("N7", [[area_leads or 0]], "TOT Area Clienti ufficiale")
+    )
+
     total_formulas = _derived_formulas(TOTAL_ROW)
     total_formulas.update(
         {

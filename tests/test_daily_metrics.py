@@ -49,8 +49,8 @@ class DailyMetricsTests(unittest.TestCase):
             {
                 "lead_id": "SECRET-2", "campaign_crm": "AREA CLIENTI", "utm_campaign": "",
                 "created_at": datetime(2026, 7, 2, 11), "match_status": "matched",
-                "matched_excel_row": 2,
-                "lead_allocation_method": "area_clienti_uniform",
+                "matched_excel_row": None,
+                "lead_allocation_method": "area_clienti_total",
             },
         ]
         rows = build_daily_metric_rows(
@@ -61,6 +61,7 @@ class DailyMetricsTests(unittest.TestCase):
         area = next(row for row in rows if row["source"] == "crm_area_clienti")
         self.assertEqual(area["leads"], 1)
         self.assertEqual(area["excel_row"], "")
+        self.assertEqual(area["lead_allocation_method"], "area_clienti_total")
         planning = next(row for row in rows if row["source"] == "planning")
         self.assertEqual(planning["monthly_lead_target"], 467)
 

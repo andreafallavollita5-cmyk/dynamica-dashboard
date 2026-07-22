@@ -48,16 +48,21 @@ def lead(number: int, campaign: str, utm: str = "", day: int = 10):
 
 
 class CRMMatchingTests(unittest.TestCase):
-    def test_area_clienti_is_the_only_uniform_allocation(self):
+    def test_area_clienti_is_counted_only_in_the_official_total(self):
         plans = [manual(row, f"Area {row}", "Area Clienti") for row in range(2, 7)]
         maps = [mapping(f"Area {row}", "AREA CLIENTI" if row == 2 else "") for row in range(2, 7)]
         leads = [lead(index, "AREA CLIENTI") for index in range(7)]
 
         allocations, methods, audit = match_crm_leads(leads, plans, maps)
 
-        self.assertEqual([allocations[row] for row in range(2, 7)], [2, 2, 1, 1, 1])
-        self.assertEqual(set(methods.values()), {"area_clienti_uniform"})
+        self.assertEqual(allocations, {})
+        self.assertEqual(methods, {})
         self.assertEqual({item["match_status"] for item in audit}, {"matched"})
+        self.assertEqual(
+            {item["lead_allocation_method"] for item in audit},
+            {"area_clienti_total"},
+        )
+        self.assertEqual({item["matched_excel_row"] for item in audit}, {None})
 
     def test_and_no_utm_fallback_advice_and_excel_serial_validity(self):
         plans = [
@@ -115,13 +120,18 @@ class OfficialReportRowsTests(unittest.TestCase):
             date(2026, 7, 1),
             date(2026, 7, 17),
             crm_leads_by_excel_row={row: 1 for row in range(2, 7)},
+            area_clienti_total=5,
         )
         subtotal = next(row for row in rows if row["row_type"] == "subtotal")
         total = next(row for row in rows if row["row_type"] == "total")
         self.assertEqual(subtotal["stima_lead"], 467)
         self.assertAlmostEqual(subtotal["stima_lead_progressiva"], 467 / 31 * 17)
         self.assertEqual(subtotal["cpl_target"], 45)
+        self.assertEqual(subtotal["lead_effettive"], 5)
         self.assertEqual(total["stima_lead"], 467)
+        self.assertEqual(total["lead_effettive"], 5)
+        campaigns = [row for row in rows if row["row_type"] == "campaign"]
+        self.assertTrue(all(row["lead_effettive"] is None for row in campaigns))
 
     def test_dem_spend_and_official_rows_are_not_repeated_on_campaigns(self):
         rows = build_report_rows(

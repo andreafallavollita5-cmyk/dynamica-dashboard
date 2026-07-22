@@ -116,6 +116,7 @@ class WritebackPlanTests(unittest.TestCase):
         self.assertEqual(by_range["R25"], "=N25*J25")
         self.assertEqual(by_range["L35"], 17)
         self.assertEqual(by_range["N29"], "=N7+N24+N28")
+        self.assertEqual(by_range["N7"], 0)
         self.assertNotIn(",", by_range["P35"])
         self.assertTrue(all(12 <= ord(key[0]) - 64 <= 22 for key in by_range))
 
