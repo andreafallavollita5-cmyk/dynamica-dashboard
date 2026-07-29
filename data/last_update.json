@@ -1,15 +1,15 @@
 {
   "client": "Dynamica Retail",
   "start_date": "2026-07-01",
-  "end_date": "2026-07-27",
-  "updated_at": "2026-07-28T07:00:21+02:00",
+  "end_date": "2026-07-28",
+  "updated_at": "2026-07-29T07:00:21+02:00",
   "status": "partial",
   "sources": {
-    "google_ads": "ok",
+    "google_ads": "stale",
     "meta_ads": "ok",
     "crm": "stale"
   },
   "crm_source": "excel",
   "crm_file": "LEAD QUESTO MESE PULITE 20-07-2026 10-57-45.xlsx",
-  "error": "Export CRM non aggiornato fino alla data finale del report."
+  "error": "Google Ads non aggiornato. Export CRM non aggiornato fino alla data finale del report."
 }
