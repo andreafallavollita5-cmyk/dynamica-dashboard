@@ -2004,7 +2004,7 @@ def main() -> None:
         print(f"Dynamica Retail dashboard - status: {metadata.get('status')}")
         return
 
-    st.set_page_config(page_title="Dynamica Retail", layout="wide")
+    st.set_page_config(page_title="Performance Control", layout="wide")
     if "dark_mode" not in st.session_state:
         st.session_state.dark_mode = False
     apply_style(st)
@@ -2039,7 +2039,7 @@ def main() -> None:
     st.markdown(
         '<div class="font-preload" aria-hidden="true"><span>Work Sans</span><span>Work Sans</span><span>Work Sans</span><span>Work Sans</span></div>'
         f'<div class="header-actions"><div class="header-action">{svg_icon("power")}</div></div>'
-        '<div class="page-title">Dashboard Dynamica Retail</div>',
+        '<div class="page-title">Performance Control</div>',
         unsafe_allow_html=True,
     )
     if status == "partial":
