@@ -52,13 +52,12 @@ EXCLUDED_CAMPAIGN_IDS = {"6936446163375"}
 
 SVG_ICONS = {
     "logo": '<svg viewBox="0 0 48 48" aria-hidden="true"><path fill="#00a5b4" d="M24 2 45 13 24 25 3 13Z"/><path fill="#008faa" d="M3 13 24 25v21L3 35Z"/><path fill="#4f5d73" d="M45 13 24 25v21l21-11Z"/><path fill="none" stroke="#fff" stroke-width="3" stroke-linejoin="round" d="M24 2 45 13v22L24 46 3 35V13Zm0 23v21m0-21L3 13m21 12 21-12"/></svg>',
-    "dashboard": '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 8 4.5v9L12 21l-8-4.5v-9Z"/><path d="m4 7.5 8 4.5 8-4.5M12 12v9"/></svg>',
+    "arrow-left": '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 18-6-6 6-6"/><path d="M9 12h10"/></svg>',
     "chart": '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20V10m6 10V4m6 16v-7m4 7H2"/></svg>',
     "channels": '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19V9m8 10V5m8 14v-7"/><circle cx="4" cy="7" r="2"/><circle cx="12" cy="3" r="2"/><circle cx="20" cy="10" r="2"/></svg>',
     "sun": '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M4.9 4.9l1.4 1.4m11.4 11.4 1.4 1.4M2 12h2m16 0h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>',
     "moon": '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 15.5A8 8 0 0 1 8.5 4 8 8 0 1 0 20 15.5Z"/></svg>',
     "bell": '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4"/></svg>',
-    "power": '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2v10m5.7-6.7a9 9 0 1 1-11.4 0"/></svg>',
     "chevron-down": '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>',
     "calendar": '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M16 3v4M8 3v4M3 10h18"/></svg>',
     "wallet": '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7h16a2 2 0 0 1 2 2v10H5a2 2 0 0 1-2-2Zm0 0 13-4v4m1 5h4"/></svg>',
@@ -326,6 +325,8 @@ def apply_style(st) -> None:
           box-shadow: 0 10px 25px rgba(0,165,180,.2);
           margin-left: -10px;
           margin-right: -5px;
+          color: #ffffff !important;
+          text-decoration: none !important;
         }
         .side-nav-row {
           padding: 15px 12px;
@@ -342,9 +343,6 @@ def apply_style(st) -> None:
         .theme-toggle .svg-icon { width:23px; height:23px; }
         [data-testid="stSidebar"] .st-key-dark_mode { position:fixed; left:47px; bottom:calc(12.6vh - 6px); width:44px; z-index:20; }
         [data-testid="stSidebar"] .st-key-dark_mode [data-testid="stWidgetLabel"] { display:none; }
-        .header-actions { position:fixed; top:10px; right:34px; display:flex; gap:12px; z-index:20; }
-        .header-action { position:relative; width:46px; height:46px; display:grid; place-items:center; border:1px solid var(--line); border-radius:8px; color:var(--blue); background:#fff; box-shadow:0 3px 14px rgba(33,33,33,.07); }
-        .header-action .svg-icon { width:22px; height:22px; stroke-width:2; }
         .page-title {
           color: var(--blue);
           font-size: 32px;
@@ -866,8 +864,6 @@ def apply_style(st) -> None:
           .side-card { width:218px; }
           .block-container { padding:12px 14px 28px; }
           .page-title { font-size:25px; line-height:30px; margin-right:90px; }
-          .header-actions { right:12px; gap:7px; }
-          .header-action { width:39px; height:39px; }
           [data-testid="stHorizontalBlock"]:has(.top-filter),
           [data-testid="stHorizontalBlock"]:has(.filter-card-label),
           [data-testid="stHorizontalBlock"]:has(.kpi-card),
@@ -948,7 +944,9 @@ def render_sidebar(st, df):
           <div class="brand-mark">{svg_icon("logo")}</div>
           <div class="brand-title">Dynamica<br><span>Retail</span></div>
         </div>
-        <div class="side-nav"><span class="nav-icon">{svg_icon("dashboard")}</span>Dashboard</div>
+        <a class="side-nav" href="https://maticbox.it" target="_top" aria-label="Torna alla piattaforma">
+          <span class="nav-icon">{svg_icon("arrow-left")}</span>Back
+        </a>
         <div class="theme-toggle">{svg_icon("sun")}{svg_icon("moon")}</div>
         """,
         unsafe_allow_html=True,
@@ -2038,7 +2036,6 @@ def main() -> None:
 
     st.markdown(
         '<div class="font-preload" aria-hidden="true"><span>Work Sans</span><span>Work Sans</span><span>Work Sans</span><span>Work Sans</span></div>'
-        f'<div class="header-actions"><div class="header-action">{svg_icon("power")}</div></div>'
         '<div class="page-title">Performance Control</div>',
         unsafe_allow_html=True,
     )
