@@ -2,14 +2,13 @@
   "client": "Dynamica Retail",
   "start_date": "2026-07-01",
   "end_date": "2026-07-29",
-  "updated_at": "2026-07-30T12:11:31+02:00",
-  "status": "partial",
+  "updated_at": "2026-07-30T12:56:36+02:00",
+  "status": "success",
   "sources": {
-    "google_ads": "stale",
+    "google_ads": "ok",
     "meta_ads": "ok",
     "crm": "ok"
   },
   "crm_source": "excel",
-  "crm_file": "LEAD QUESTO MESE PULITE 30-07-2026 11-39-18.xlsx",
-  "error": "Google Ads non aggiornato."
+  "crm_file": "LEAD QUESTO MESE PULITE 30-07-2026 11-39-18.xlsx"
 }
