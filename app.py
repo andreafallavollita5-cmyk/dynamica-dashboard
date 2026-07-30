@@ -52,7 +52,6 @@ EXCLUDED_CAMPAIGN_IDS = {"6936446163375"}
 
 SVG_ICONS = {
     "logo": '<svg viewBox="0 0 48 48" aria-hidden="true"><path fill="#00a5b4" d="M24 2 45 13 24 25 3 13Z"/><path fill="#008faa" d="M3 13 24 25v21L3 35Z"/><path fill="#4f5d73" d="M45 13 24 25v21l21-11Z"/><path fill="none" stroke="#fff" stroke-width="3" stroke-linejoin="round" d="M24 2 45 13v22L24 46 3 35V13Zm0 23v21m0-21L3 13m21 12 21-12"/></svg>',
-    "arrow-left": '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 18-6-6 6-6"/><path d="M9 12h10"/></svg>',
     "chart": '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20V10m6 10V4m6 16v-7m4 7H2"/></svg>',
     "channels": '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19V9m8 10V5m8 14v-7"/><circle cx="4" cy="7" r="2"/><circle cx="12" cy="3" r="2"/><circle cx="20" cy="10" r="2"/></svg>',
     "sun": '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M4.9 4.9l1.4 1.4m11.4 11.4 1.4 1.4M2 12h2m16 0h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>',
@@ -255,6 +254,15 @@ def apply_style(st) -> None:
           overflow-x: hidden !important;
         }
         [data-testid="stSidebar"] > div:first-child { width: 16.1vw !important; min-width:258px !important; max-width:310px !important; }
+        [data-testid="stSidebar"][aria-expanded="false"],
+        [data-testid="stSidebar"][aria-expanded="false"] > div:first-child {
+          width: 0 !important;
+          min-width: 0 !important;
+          max-width: 0 !important;
+        }
+        [data-testid="stSidebar"][aria-expanded="false"] {
+          border-right: 0;
+        }
         [data-testid="stSidebar"] * {
           color: #ffffff;
         }
@@ -944,9 +952,6 @@ def render_sidebar(st, df):
           <div class="brand-mark">{svg_icon("logo")}</div>
           <div class="brand-title">Dynamica<br><span>Retail</span></div>
         </div>
-        <a class="side-nav" href="https://maticbox.it" target="_top" aria-label="Torna alla piattaforma">
-          <span class="nav-icon">{svg_icon("arrow-left")}</span>Back
-        </a>
         <div class="theme-toggle">{svg_icon("sun")}{svg_icon("moon")}</div>
         """,
         unsafe_allow_html=True,
