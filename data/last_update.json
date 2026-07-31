@@ -1,8 +1,8 @@
 {
   "client": "Dynamica Retail",
   "start_date": "2026-07-01",
-  "end_date": "2026-07-29",
-  "updated_at": "2026-07-30T12:56:36+02:00",
+  "end_date": "2026-07-30",
+  "updated_at": "2026-07-31T07:00:28+02:00",
   "status": "success",
   "sources": {
     "google_ads": "ok",
