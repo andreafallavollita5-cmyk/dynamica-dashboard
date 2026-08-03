@@ -6,7 +6,7 @@ import json
 import html
 import math
 import os
-from datetime import date, timedelta
+from datetime import date
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Iterable
@@ -16,6 +16,7 @@ DATA_PATH = Path("data/report_data.csv")
 REPORT_DAILY_PATH = Path("data/report_daily_metrics.csv")
 REPORT_DAILY_STATUS_PATH = Path("data/report_daily_status.json")
 LAST_UPDATE_PATH = Path("data/last_update.json")
+HISTORY_PATH = Path("data/history")
 
 DASHBOARD_TABLE_COLUMNS = {
     "funnel": "Funnel",
@@ -75,13 +76,88 @@ def svg_icon(name: str, class_name: str = "") -> str:
     return SVG_ICONS[name].replace("<svg ", f'<svg class="svg-icon {class_name}" ')
 
 
-def load_last_update() -> dict:
+def load_last_update(path: Path | None = None) -> dict:
     """Load latest update metadata without exposing technical details."""
-    if not LAST_UPDATE_PATH.exists():
+    path = path or LAST_UPDATE_PATH
+    if not path.exists():
         return {"status": "missing", "error": "last_update.json non trovato"}
 
-    with LAST_UPDATE_PATH.open("r", encoding="utf-8") as f:
+    with path.open("r", encoding="utf-8-sig") as f:
         return json.load(f)
+
+
+def load_period_catalog() -> dict[str, dict]:
+    """Return complete historical months plus the current latest dataset."""
+    catalog: dict[str, dict] = {}
+    if HISTORY_PATH.exists():
+        for folder in sorted(path for path in HISTORY_PATH.iterdir() if path.is_dir()):
+            required = {
+                "report": folder / "report_data.csv",
+                "daily": folder / "report_daily_metrics.csv",
+                "metadata": folder / "last_update.json",
+            }
+            if not all(path.exists() for path in required.values()):
+                continue
+            metadata = load_last_update(required["metadata"])
+            try:
+                start = date.fromisoformat(str(metadata["start_date"]))
+                end = date.fromisoformat(str(metadata["end_date"]))
+            except (KeyError, ValueError, TypeError):
+                continue
+            key = start.strftime("%Y-%m")
+            if folder.name != key or (start.year, start.month) != (end.year, end.month):
+                continue
+            catalog[key] = {**required, "start": start, "end": end}
+
+    latest_metadata = load_last_update()
+    try:
+        latest_start = date.fromisoformat(str(latest_metadata["start_date"]))
+        latest_end = date.fromisoformat(str(latest_metadata["end_date"]))
+    except (KeyError, ValueError, TypeError):
+        return catalog
+    if (
+        DATA_PATH.exists()
+        and REPORT_DAILY_PATH.exists()
+        and (latest_start.year, latest_start.month)
+        == (latest_end.year, latest_end.month)
+    ):
+        catalog[latest_start.strftime("%Y-%m")] = {
+            "report": DATA_PATH,
+            "daily": REPORT_DAILY_PATH,
+            "metadata": LAST_UPDATE_PATH,
+            "start": latest_start,
+            "end": latest_end,
+        }
+    return catalog
+
+
+def period_catalog_bounds(catalog: dict[str, dict]) -> tuple[date, date]:
+    if not catalog:
+        raise ValueError("Nessun periodo dashboard disponibile.")
+    return (
+        min(item["start"] for item in catalog.values()),
+        max(item["end"] for item in catalog.values()),
+    )
+
+
+def resolve_period_dataset(
+    catalog: dict[str, dict], selected_start: date, selected_end: date
+) -> dict:
+    """Resolve one monthly dataset and reject gaps or out-of-range dates."""
+    if (selected_start.year, selected_start.month) != (
+        selected_end.year,
+        selected_end.month,
+    ):
+        raise ValueError("Data iniziale e data finale devono appartenere allo stesso mese.")
+    item = catalog.get(selected_start.strftime("%Y-%m"))
+    if item is None:
+        raise ValueError("Il mese selezionato non è disponibile nello storico.")
+    if selected_start < item["start"] or selected_end > item["end"]:
+        raise ValueError(
+            f"Per questo mese sono disponibili dati dal "
+            f"{item['start']:%d/%m/%Y} al {item['end']:%d/%m/%Y}."
+        )
+    return item
 
 
 def as_number(series):
@@ -1020,11 +1096,11 @@ def render_kpi_card(
     )
 
 
-def prepare_data(pd) -> "pd.DataFrame":
-    if not DATA_PATH.exists():
+def prepare_data(pd, path: Path = DATA_PATH) -> "pd.DataFrame":
+    if not path.exists():
         return pd.DataFrame()
 
-    df = pd.read_csv(DATA_PATH)
+    df = pd.read_csv(path)
     numeric_columns = [
         "investimento_media",
         "stima_lead_progressiva",
@@ -1071,9 +1147,9 @@ def prepare_data(pd) -> "pd.DataFrame":
     return df
 
 
-def prepare_spend_daily(pd) -> "pd.DataFrame":
+def prepare_spend_daily(pd, path: Path = REPORT_DAILY_PATH) -> "pd.DataFrame":
     """Load privacy-safe daily spend and CRM lead aggregates."""
-    if not REPORT_DAILY_PATH.exists():
+    if not path.exists():
         return pd.DataFrame(
             columns=[
                 "date", "source", "excel_row", "spend_rollup_excel_row", "campaign_id",
@@ -1082,7 +1158,7 @@ def prepare_spend_daily(pd) -> "pd.DataFrame":
             ]
         )
     daily = pd.read_csv(
-        REPORT_DAILY_PATH,
+        path,
         dtype={
             "campaign_id": "string", "excel_row": "string",
             "spend_rollup_excel_row": "string",
@@ -2014,10 +2090,30 @@ def main() -> None:
     theme_name = "dark" if st.session_state.dark_mode else "light"
     st.markdown(f'<div id="dashboard-theme" data-theme="{theme_name}"></div>', unsafe_allow_html=True)
 
-    metadata = load_last_update()
-    report_df = prepare_data(pd)
-    daily_spend = prepare_spend_daily(pd)
-    daily_status = load_spend_daily_status()
+    catalog = load_period_catalog()
+    if not catalog:
+        st.error("Dati dashboard non disponibili.")
+        return
+    available_start, available_end = period_catalog_bounds(catalog)
+    latest_dataset = max(catalog.values(), key=lambda item: item["end"])
+    default_start = latest_dataset["start"]
+    default_end = latest_dataset["end"]
+    st.session_state.setdefault("applied_start_date", default_start)
+    st.session_state.setdefault("applied_end_date", default_end)
+    try:
+        active_dataset = resolve_period_dataset(
+            catalog,
+            st.session_state["applied_start_date"],
+            st.session_state["applied_end_date"],
+        )
+    except ValueError:
+        st.session_state["applied_start_date"] = default_start
+        st.session_state["applied_end_date"] = default_end
+        active_dataset = resolve_period_dataset(catalog, default_start, default_end)
+
+    metadata = load_last_update(active_dataset["metadata"])
+    report_df = prepare_data(pd, active_dataset["report"])
+    daily_spend = prepare_spend_daily(pd, active_dataset["daily"])
     if "row_type" in report_df.columns:
         official_rows = report_df[report_df["row_type"].isin(["subtotal", "total"])].copy()
         campaign_df = report_df[report_df["row_type"] == "campaign"].copy()
@@ -2036,7 +2132,6 @@ def main() -> None:
 
     start_date = first_value(metadata, ["start_date"])
     end_date = first_value(metadata, ["end_date"])
-    updated_at = first_value(metadata, ["updated_at"])
     status = first_value(metadata, ["status"])
 
     st.markdown(
@@ -2054,16 +2149,6 @@ def main() -> None:
     project_options = ["Tutti i progetti"] + sorted(
         str(value) for value in campaign_df["campaign_name"].dropna().unique()
     )
-    yesterday = date.today() - timedelta(days=1)
-    if daily_spend.empty:
-        available_start = pd.to_datetime(start_date).date()
-        available_end = min(pd.to_datetime(end_date).date(), yesterday)
-    else:
-        available_start = min(daily_spend["date"])
-        available_end = min(max(daily_spend["date"]), yesterday)
-    default_start = max(available_start, available_end.replace(day=1))
-    st.session_state.setdefault("applied_start_date", default_start)
-    st.session_state.setdefault("applied_end_date", available_end)
     with top_left:
         st.markdown(
             '<div class="filter-card-label project-filter-label">Progetto</div>',
@@ -2110,13 +2195,15 @@ def main() -> None:
     if apply_period:
         try:
             selected_start, selected_end = normalize_period(
-                (start_date, end_date), default_start, available_end
+                (start_date, end_date), default_start, default_end
             )
+            resolve_period_dataset(catalog, selected_start, selected_end)
         except ValueError as exc:
             st.error(str(exc))
             return
         st.session_state["applied_start_date"] = selected_start
         st.session_state["applied_end_date"] = selected_end
+        st.rerun()
     selected_start = st.session_state["applied_start_date"]
     selected_end = st.session_state["applied_end_date"]
 

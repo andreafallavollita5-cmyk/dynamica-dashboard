@@ -63,7 +63,8 @@ Cliente vede dashboard aggiornata tramite link protetto da password
 
 ## Scelta storage definitiva
 
-Usare **GitHub privato** come storage online dei soli file latest.
+Usare **GitHub privato** come storage online dei file latest e degli snapshot
+mensili aggregati necessari al filtro storico.
 
 Non usare Google Cloud Storage.
 
@@ -80,9 +81,13 @@ data/report_data.csv
 data/report_daily_metrics.csv
 exports/report_dynamica_updated.xlsx
 data/last_update.json
+data/history/YYYY-MM/report_data.csv
+data/history/YYYY-MM/report_daily_metrics.csv
+data/history/YYYY-MM/last_update.json
 ```
 
-Questi sono i file che Streamlit Cloud deve leggere.
+I primi quattro sono i file latest. Le cartelle `data/history/YYYY-MM/` sono
+snapshot mensili aggregati e congelati, necessari per il filtro storico.
 
 ## Cosa resta solo sul PC aziendale
 
@@ -118,9 +123,10 @@ Questa scelta è la migliore perché:
 
 ## Regola importante
 
-GitHub non deve diventare il magazzino storico completo.
+GitHub non deve diventare il magazzino storico giornaliero completo.
 
-GitHub deve contenere solo l’ultima versione dei dati.
+GitHub contiene i file latest e una sola copia aggregata congelata per ogni mese
+completo.
 
 Lo storico completo resta nella cartella `archive/` del PC aziendale.
 
@@ -547,13 +553,17 @@ Lo storico locale non va committato su GitHub.
 
 ## Pubblicazione GitHub
 
-Dopo archivio locale, aggiornare i file latest nella repo:
+Dopo archivio locale, aggiornare i file latest e gli eventuali nuovi snapshot
+mensili nella repo:
 
 ```text
 data/report_data.csv
 data/report_daily_metrics.csv
 data/last_update.json
 exports/report_dynamica_updated.xlsx
+data/history/YYYY-MM/report_data.csv
+data/history/YYYY-MM/report_daily_metrics.csv
+data/history/YYYY-MM/last_update.json
 ```
 
 Poi fare commit e push.
@@ -590,6 +600,9 @@ La dashboard deve leggere i dati direttamente dai file presenti nella repo:
 data/report_data.csv
 data/last_update.json
 exports/report_dynamica_updated.xlsx
+data/history/YYYY-MM/report_data.csv
+data/history/YYYY-MM/report_daily_metrics.csv
+data/history/YYYY-MM/last_update.json
 ```
 
 Non deve leggere Google Cloud Storage.
@@ -629,6 +642,10 @@ Sidebar:
 * platform;
 * channel;
 * campagna.
+
+Il filtro data deve consentire intervalli liberi interni a un solo mese. I mesi
+chiusi vengono letti dagli snapshot congelati; il mese corrente resta dal primo
+giorno del mese fino a ieri.
 
 ## Tabella dashboard
 

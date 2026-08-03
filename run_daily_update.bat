@@ -48,6 +48,12 @@ if errorlevel 1 (
   exit /b 1
 )
 
+"%PYTHON%" -m src.freeze_monthly_history --backfill >>logs\daily_update.log 2>&1
+if errorlevel 1 (
+  echo [%date% %time%] Congelamento storico mensile fallito>>logs\daily_update.log
+  exit /b 1
+)
+
 "%PYTHON%" -m src.publish_to_github >>logs\daily_update.log 2>&1
 if errorlevel 1 (
   echo [%date% %time%] Pubblicazione GitHub fallita>>logs\daily_update.log

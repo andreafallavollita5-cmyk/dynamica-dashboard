@@ -133,6 +133,28 @@ giorni di calendario.
 CSV ed Excel scaricati includono le righe `TOT Area Clienti`, `TOT Lead Veloce`,
 `TOT DEM` e `TOTALE GENERALE` relative alle date selezionate.
 
+## Storico mensile dashboard
+
+Quando il report latest copre un mese completo, la pipeline crea una sola copia
+congelata in:
+
+```text
+data/history/YYYY-MM/
+  report_data.csv
+  report_daily_metrics.csv
+  last_update.json
+```
+
+La copia non viene sovrascritta. Le vecchie cartelle dell'archivio locale
+vengono recuperate soltanto se contengono un mese completo; le copie parziali
+sono ignorate. Lo storico pubblicato contiene dati aggregati, mentre lo storico
+giornaliero completo continua a restare soltanto sul PC.
+
+La dashboard apre per impostazione predefinita il mese corrente dal giorno 1 a
+ieri. Il filtro può selezionare un intervallo interno a un mese storico, ma non
+può attraversare due mesi. KPI, grafici, tabella, alert e download CSV/Excel
+vengono ricalcolati sul periodo selezionato.
+
 Le tre coppie storica/`QUINTO DIGITALE` identificate dalle righe planning
 `9/10`, `11/12` e `13/14` restano visibili come campagne separate. Per ogni
 coppia, Stima Lead, Delta Lead, CPL Effettivo e Delta CPL sono metriche uniche

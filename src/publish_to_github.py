@@ -16,6 +16,12 @@ LATEST_FILES = (
     "data/last_update.json",
     "exports/report_dynamica_updated.xlsx",
 )
+HISTORY_ROOT = Path("data/history")
+HISTORY_FILES = (
+    "report_data.csv",
+    "report_daily_metrics.csv",
+    "last_update.json",
+)
 
 
 def _git(*args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
@@ -25,7 +31,7 @@ def _git(*args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
 
 
 def publish_latest_files(commit_message: str | None = None) -> bool:
-    """Commit and push only latest dashboard files when explicitly enabled.
+    """Commit and push latest files plus frozen monthly dashboard history.
 
     Returns False when publishing is disabled or the latest files are unchanged.
     """
@@ -36,8 +42,24 @@ def publish_latest_files(commit_message: str | None = None) -> bool:
     if missing:
         raise FileNotFoundError("File latest mancanti: " + ", ".join(missing))
 
-    _git("add", "--", *LATEST_FILES)
-    changed = _git("diff", "--cached", "--quiet", "--", *LATEST_FILES, check=False)
+    published_paths = list(LATEST_FILES)
+    history_root = ROOT / HISTORY_ROOT
+    if history_root.exists():
+        for folder in sorted(path for path in history_root.iterdir() if path.is_dir()):
+            try:
+                datetime.strptime(folder.name, "%Y-%m")
+            except ValueError:
+                continue
+            published_paths.extend(
+                path.relative_to(ROOT).as_posix()
+                for name in HISTORY_FILES
+                if (path := folder / name).is_file()
+            )
+
+    _git("add", "--", *published_paths)
+    changed = _git(
+        "diff", "--cached", "--quiet", "--", *published_paths, check=False
+    )
     if changed.returncode == 0:
         return False
     if changed.returncode != 1:
@@ -48,7 +70,7 @@ def publish_latest_files(commit_message: str | None = None) -> bool:
         + " "
         + datetime.now().strftime("%Y-%m-%d")
     )
-    _git("commit", "-m", message, "--", *LATEST_FILES)
+    _git("commit", "-m", message, "--", *published_paths)
     branch = os.getenv("GITHUB_BRANCH", "main").strip() or "main"
     _git("push", "origin", branch)
     return True
