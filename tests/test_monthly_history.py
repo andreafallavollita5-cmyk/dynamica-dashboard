@@ -118,6 +118,27 @@ class MonthlyFreezeTests(unittest.TestCase):
             frozen = pd.read_csv(history / "2026-07" / "report_data.csv")
             self.assertEqual(frozen.iloc[0]["campaign_name"], "Versione congelata")
 
+    def test_unreadable_existing_month_does_not_block_daily_updates(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "source"
+            history = root / "history"
+            destination = history / "2026-07"
+            write_dataset(source, start="2026-07-01", end="2026-07-31")
+            destination.mkdir(parents=True)
+
+            original_iterdir = Path.iterdir
+
+            def guarded_iterdir(path):
+                if path == destination:
+                    raise PermissionError("cartella bloccata")
+                return original_iterdir(path)
+
+            with patch.object(Path, "iterdir", guarded_iterdir):
+                result = freeze_completed_month(source, history)
+
+            self.assertEqual(result, destination)
+
     def test_backfill_recovers_complete_archives_and_skips_partial_ones(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

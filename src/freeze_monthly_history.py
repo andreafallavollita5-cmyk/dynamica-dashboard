@@ -67,6 +67,13 @@ def freeze_completed_month(
     history_root.mkdir(parents=True, exist_ok=True)
     destination = history_root / month_key
     if destination.exists():
+        try:
+            list(destination.iterdir())
+        except PermissionError:
+            # A previously published month can remain tracked on GitHub even
+            # when a local Windows ACL makes its directory unreadable. Do not
+            # block every subsequent daily update or stage its deletion.
+            return destination
         missing = [name for name in REQUIRED_FILES if not (destination / name).exists()]
         if missing:
             raise MonthlyHistoryError(
