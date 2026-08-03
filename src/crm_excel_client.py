@@ -15,6 +15,11 @@ REQUIRED_COLUMNS = (
     "Utm campaign",
 )
 
+CRM_SHEET_NAMES = (
+    "LEAD QUESTO MESE PULITE",
+    "LEAD MESE SCORSO PULITE",
+)
+
 
 class CRMExportError(RuntimeError):
     """Raised when the manual CRM export is missing or invalid."""
@@ -22,6 +27,33 @@ class CRMExportError(RuntimeError):
 
 def _text(value: object) -> str:
     return "" if pd.isna(value) else str(value).strip()
+
+
+def read_crm_export_frame(path: str | Path) -> pd.DataFrame:
+    """Read the CRM data sheet, accepting current- and previous-month exports."""
+    export_path = Path(path)
+    try:
+        with pd.ExcelFile(export_path) as workbook:
+            preferred = [
+                name for name in CRM_SHEET_NAMES if name in workbook.sheet_names
+            ]
+            candidates = preferred + [
+                name for name in workbook.sheet_names if name not in preferred
+            ]
+            for sheet_name in candidates:
+                try:
+                    frame = workbook.parse(sheet_name=sheet_name, dtype=object)
+                except Exception:
+                    continue
+                if all(column in frame.columns for column in REQUIRED_COLUMNS):
+                    return frame
+    except CRMExportError:
+        raise
+    except Exception as exc:
+        raise CRMExportError("Impossibile leggere l'export CRM.") from exc
+    raise CRMExportError(
+        "Nessun worksheet CRM contiene tutte le colonne richieste."
+    )
 
 
 def read_crm_export(
@@ -34,14 +66,7 @@ def read_crm_export(
     if not export_path.exists():
         raise CRMExportError(f"Export CRM non trovato: {export_path}")
 
-    try:
-        frame = pd.read_excel(
-            export_path,
-            sheet_name="LEAD QUESTO MESE PULITE",
-            dtype=object,
-        )
-    except Exception as exc:
-        raise CRMExportError("Impossibile leggere l'export CRM.") from exc
+    frame = read_crm_export_frame(export_path)
 
     missing = [column for column in REQUIRED_COLUMNS if column not in frame.columns]
     if missing:

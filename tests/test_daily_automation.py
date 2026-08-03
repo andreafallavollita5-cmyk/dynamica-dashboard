@@ -35,7 +35,12 @@ def manual_row(**overrides):
     return row
 
 
-def write_crm(path: Path, *, valid: bool = True) -> None:
+def write_crm(
+    path: Path,
+    *,
+    valid: bool = True,
+    sheet_name: str = "LEAD QUESTO MESE PULITE",
+) -> None:
     columns = {
         "Id Lead": ["lead-1"],
         "Campagna": ["Campaign"],
@@ -46,7 +51,7 @@ def write_crm(path: Path, *, valid: bool = True) -> None:
         columns.pop("Id Lead")
     with pd.ExcelWriter(path, engine="openpyxl") as writer:
         pd.DataFrame(columns).to_excel(
-            writer, sheet_name="LEAD QUESTO MESE PULITE", index=False
+            writer, sheet_name=sheet_name, index=False
         )
 
 
@@ -65,6 +70,17 @@ class DateAutomationTests(unittest.TestCase):
 
 
 class CRMSelectionTests(unittest.TestCase):
+    def test_previous_month_sheet_name_is_supported(self):
+        with tempfile.TemporaryDirectory() as temp:
+            export = Path(temp) / "crm-previous-month.xlsx"
+            write_crm(export, sheet_name="LEAD MESE SCORSO PULITE")
+
+            selected = select_crm_export(
+                date(2026, 7, 31), explicit_path=export
+            )
+
+            self.assertEqual(selected.path, export)
+
     def test_newest_valid_file_is_selected_and_lock_file_is_ignored(self):
         with tempfile.TemporaryDirectory() as temp:
             folder = Path(temp)

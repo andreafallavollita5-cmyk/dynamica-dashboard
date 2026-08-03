@@ -9,13 +9,10 @@ from pathlib import Path
 
 import pandas as pd
 
-from src.crm_excel_client import REQUIRED_COLUMNS
+from src.crm_excel_client import REQUIRED_COLUMNS, read_crm_export_frame
 
 
 ROOT = Path(__file__).resolve().parents[1]
-CRM_SHEET_NAME = "LEAD QUESTO MESE PULITE"
-
-
 @dataclass(frozen=True)
 class CRMExportSelection:
     path: Path
@@ -25,7 +22,7 @@ class CRMExportSelection:
 
 def _is_valid_workbook(path: Path) -> bool:
     try:
-        frame = pd.read_excel(path, sheet_name=CRM_SHEET_NAME, dtype=object)
+        frame = read_crm_export_frame(path)
     except Exception:
         return False
     if not all(column in frame.columns for column in REQUIRED_COLUMNS):
