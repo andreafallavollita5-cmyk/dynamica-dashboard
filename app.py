@@ -2387,7 +2387,7 @@ def main() -> None:
         st.markdown(
             f"""
             <div class="panel">
-              <div class="panel-title">Indice efficienza CPL</div>
+              <div class="panel-title">Indice efficienza campagna</div>
               <div class="cpl-gauge" style="--eff-color:{efficiency_color}">
                 <svg viewBox="0 0 220 125" aria-hidden="true">
                   <path class="cpl-arc" stroke="#f20d18" d="M20 105 A90 90 0 0 1 65 27.1"/>
