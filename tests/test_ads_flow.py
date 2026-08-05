@@ -6,7 +6,7 @@ from unittest.mock import patch
 
 import pandas as pd
 
-from app import calculate_dashboard_metrics
+from app import calculate_dashboard_metrics, calculate_effectiveness_index
 from src.ads_verification import verify_ads_connections
 from src.build_report_data import build_report_data, build_report_rows
 from src.google_sheets_client import _is_enabled, _rows_from_values
@@ -30,6 +30,12 @@ def manual_row(**overrides):
 
 
 class AdsReportFlowTests(unittest.TestCase):
+    def test_effectiveness_index_is_lead_progress_minus_spending_progress(self):
+        self.assertAlmostEqual(calculate_effectiveness_index(0.941, 0.961), -0.02)
+        self.assertAlmostEqual(calculate_effectiveness_index(1.05, 0.95), 0.10)
+        self.assertEqual(calculate_effectiveness_index(1.0, 1.0), 0.0)
+        self.assertIsNone(calculate_effectiveness_index(None, 1.0))
+
     def test_spend_is_joined_by_campaign_id_for_both_platforms(self):
         manual = [
             manual_row(),
