@@ -2297,7 +2297,8 @@ def main() -> None:
     lead_width = min(max(lead_ratio or 0, 0), 1.2) / 1.2 * 100
     cpl_efficiency = None
     if cpl_avg is not None and cpl_target_avg and not math.isnan(cpl_target_avg):
-        cpl_efficiency = (cpl_avg / cpl_target_avg) - 1
+        # A CPL above target is a loss of efficiency, so its sign must be negative.
+        cpl_efficiency = 1 - (cpl_avg / cpl_target_avg)
 
     lead_fraction = min(max(lead_ratio if lead_ratio is not None else 1, 0), 1)
     lead_progress = lead_fraction * 100
