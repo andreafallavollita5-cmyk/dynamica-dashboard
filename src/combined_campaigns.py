@@ -1,4 +1,9 @@
-"""Lead-metric rollups for legacy/new CRM campaign pairs."""
+"""Optional lead-metric rollups for explicitly configured campaign pairs.
+
+The live planning sheet now contains one complete row per campaign, so no
+campaign pairs are configured.  Keeping the helper as a no-op preserves
+backward compatibility for callers without coupling metrics to sheet rows.
+"""
 
 from __future__ import annotations
 
@@ -8,12 +13,9 @@ from collections.abc import Iterable
 from src.utils import safe_divide
 
 
-# Stable planning rows in ``manual_inputs``.  Each pair is (legacy, new).
-COMBINED_CAMPAIGN_PAIRS: tuple[tuple[int, int], ...] = (
-    (9, 10),
-    (11, 12),
-    (13, 14),
-)
+# Campaigns are independent: never infer relationships from physical row
+# numbers in ``manual_inputs``.
+COMBINED_CAMPAIGN_PAIRS: tuple[tuple[int, int], ...] = ()
 COMBINED_CAMPAIGN_ROWS = frozenset(
     row for pair in COMBINED_CAMPAIGN_PAIRS for row in pair
 )

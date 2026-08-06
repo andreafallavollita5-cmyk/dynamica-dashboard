@@ -186,6 +186,22 @@ class AdsReportFlowTests(unittest.TestCase):
         )
         self.assertEqual(rows[0]["sheet_dem_lead_effettive_subtotal"], 524)
 
+    def test_legacy_sheet_stops_at_tot_dem_before_control_rows(self):
+        values = [
+            ["Funnel", "Canale", "Canale", "ID Campagna", "Campagna",
+             "Investimento Media"],
+            ["Lead Veloce", "Dem", "DEM", "", "DEM TIG", 1000],
+            ["TOT DEM", "", "", "", "", 1000],
+            ["", "", "", "", "", 1000],
+            ["giorni mese", "", "", "", "giorni feriali x dem", ""],
+            [31, 21, "", 5, 3, ""],
+        ]
+
+        rows = _rows_from_values(values)
+
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["campaign_name"], "DEM TIG")
+
     def test_estimates_are_recalculated_while_manual_non_ads_spend_is_preserved(self):
         manual = manual_row(
             platform="Dem",

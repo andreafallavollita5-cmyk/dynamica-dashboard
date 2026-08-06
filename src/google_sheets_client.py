@@ -256,6 +256,8 @@ def _rows_from_legacy_dashboard(values: list[list[str]]) -> list[dict]:
     for excel_row, raw_row in enumerate(values[1:], start=2):
         padded = raw_row + [""] * max(0, 23 - len(raw_row))
         funnel = str(padded[0]).strip()
+        if funnel.casefold() == "tot dem":
+            break
         platform = str(padded[1]).strip()
         channel = str(padded[2]).strip()
         campaign_id = str(padded[3]).strip()

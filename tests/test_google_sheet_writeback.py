@@ -7,7 +7,6 @@ import pandas as pd
 
 from src.writeback_google_sheet import (
     SheetWritebackError,
-    _without_combined_lead_merges,
     build_update_plan,
 )
 from src.update_sheet_estimates import build_estimate_updates
@@ -36,15 +35,19 @@ def sheet_values():
     rows[0][4] = "Campagna"
     rows[1][3] = "111"
     rows[1][4] = "Campaign A"
-    rows[2][3] = "222"
-    rows[2][4] = "Campaign B"
-    rows[8][3] = "22822606735"
-    rows[8][4] = "DYN_VELOCE Cessione del Quinto [Esatta]"
-    rows[9][3] = "23990314506"
-    rows[9][4] = "DYN_VELOCE Cessione del Quinto [Esatta] QUINTO DIGITALE"
-    rows[24][4] = "DEM DYNAMICS ADVICE ME"
-    rows[25][4] = "DEM DIGITOO"
-    rows[26][4] = "DEM TIG"
+    rows[2][0] = "TOT Area Clienti"
+    rows[3][3] = "222"
+    rows[3][4] = "Campaign B"
+    rows[4][3] = "22822606735"
+    rows[4][4] = "DYN_VELOCE Cessione del Quinto [Esatta]"
+    rows[5][3] = "23990314506"
+    rows[5][4] = "DYN_VELOCE Cessione del Quinto [Esatta] QUINTO DIGITALE"
+    rows[6][0] = "TOT Lead Veloce"
+    rows[7][4] = "DEM DYNAMICS ADVICE ME"
+    rows[8][4] = "DEM DIGITOO"
+    rows[9][4] = "DEM TIG"
+    rows[10][0] = "TOT DEM"
+    rows[11][5] = 1
     return rows
 
 
@@ -138,50 +141,30 @@ class WritebackPlanTests(unittest.TestCase):
                 *official_rows(),
             ]
         )
-        merges = [
-            {
-                "startRowIndex": 1,
-                "endRowIndex": 3,
-                "startColumnIndex": 13,
-                "endColumnIndex": 14,
-            },
-            {
-                "startRowIndex": 1,
-                "endRowIndex": 3,
-                "startColumnIndex": 17,
-                "endColumnIndex": 18,
-            },
-        ]
         period, updates, _ = build_update_plan(
-            frame, sheet_values(), merges, expected_end_date=date(2026, 7, 17)
+            frame, sheet_values(), [], expected_end_date=date(2026, 7, 17)
         )
         by_range = {update.range: update.values[0][0] for update in updates}
         self.assertEqual(period.elapsed_days, 17)
-        self.assertEqual(by_range["N2"], 30)
-        self.assertEqual(by_range["R2"], 300)
-        self.assertEqual(by_range["R25"], "=N25*J25")
+        self.assertEqual(by_range["N2"], 10)
+        self.assertEqual(by_range["R2"], 100)
+        self.assertEqual(by_range["N4"], 20)
+        self.assertEqual(by_range["R4"], 200)
+        self.assertEqual(by_range["R8"], "=N8*J8")
         self.assertEqual(by_range["L35"], 17)
         self.assertEqual(by_range["H26"], 31)
         self.assertEqual(by_range["I26"], 23)
         self.assertEqual(by_range["K26"], 17)
         self.assertEqual(by_range["L26"], 13)
-        self.assertEqual(by_range["L24"], '=IF(K24="";"";K24/H$26)')
-        self.assertEqual(by_range["M24"], '=IF(L24="";"";L24*K$26)')
         self.assertEqual(by_range["P2"], '=IF(F2="";"";F2/H$26)')
         self.assertEqual(by_range["Q2"], '=IF(P2="";"";P2*K$26)')
-        self.assertEqual(by_range["P25"], '=IF(F25="";"";F25/I$26)')
-        self.assertEqual(by_range["Q25"], '=IF(P25="";"";P25*L$26)')
-        self.assertEqual(by_range["M25"], '=IF(L25="";"";L25*K$26)')
-        self.assertEqual(by_range["P29"], "=P7+P24+P28")
-        self.assertEqual(by_range["Q29"], "=Q7+Q24+Q28")
-        self.assertEqual(by_range["N29"], "=N7+N24+N28")
-        self.assertEqual(by_range["N7"], 0)
-        self.assertNotIn(",", by_range["P35"])
-        self.assertEqual(
-            by_range["P35"],
-            "=(F2+F4+F8+F9+F11+F13+F15+F16)/H26*K26",
-        )
-        self.assertEqual(by_range["P37"], "=SUM(F25:F27)/I26*L26")
+        self.assertEqual(by_range["P8"], '=IF(F8="";"";F8/I$26)')
+        self.assertEqual(by_range["Q8"], '=IF(P8="";"";P8*L$26)')
+        self.assertEqual(by_range["M8"], '=IF(L8="";"";L8*K$26)')
+        self.assertEqual(by_range["P12"], "=P3+P7+P11")
+        self.assertEqual(by_range["Q12"], "=Q3+Q7+Q11")
+        self.assertEqual(by_range["N12"], "=N3+N7+N11")
+        self.assertEqual(by_range["N3"], 0)
         control_cells = {"H26", "I26", "K26", "L26"}
         self.assertTrue(
             all(
@@ -244,10 +227,10 @@ class WritebackPlanTests(unittest.TestCase):
             frame, sheet_values(), [], date(2026, 7, 17)
         )
         by_range = {update.range: update.values[0][0] for update in updates}
-        self.assertEqual(by_range["P26"], '=IF(F26="";"";F26/I$26)')
-        self.assertEqual(by_range["Q26"], '=IF(P26="";"";P26*L$26)')
+        self.assertEqual(by_range["P9"], '=IF(F9="";"";F9/I$26)')
+        self.assertEqual(by_range["Q9"], '=IF(P9="";"";P9*L$26)')
 
-    def test_combined_pair_keeps_leads_separate_and_uses_combined_formulas(self):
+    def test_adjacent_campaigns_use_independent_formulas(self):
         frame = pd.DataFrame(
             [
                 report_row(
@@ -271,34 +254,15 @@ class WritebackPlanTests(unittest.TestCase):
                 *official_rows(),
             ]
         )
-        merges = [
-            {
-                "sheetId": 1,
-                "startRowIndex": 8,
-                "endRowIndex": 10,
-                "startColumnIndex": 13,
-                "endColumnIndex": 14,
-            },
-            {
-                "sheetId": 1,
-                "startRowIndex": 8,
-                "endRowIndex": 10,
-                "startColumnIndex": 17,
-                "endColumnIndex": 18,
-            },
-        ]
-
         _, updates, expected = build_update_plan(
-            frame, sheet_values(), merges, date(2026, 7, 17)
+            frame, sheet_values(), [], date(2026, 7, 17)
         )
         by_range = {update.range: update.values[0][0] for update in updates}
-        self.assertEqual(by_range["N9"], 61)
-        self.assertEqual(by_range["N10"], 92)
-        self.assertEqual(by_range["O9"], '=IF(OR(N9="";M9="");"";SUM(N9:N10)-M9)')
-        self.assertEqual(by_range["U9"], '=IFERROR(R9/SUM(N9:N10))')
-        self.assertEqual(expected["campaign:9:lead"], 61)
-        self.assertEqual(expected["campaign:10:lead"], 92)
-        self.assertEqual(len(_without_combined_lead_merges(merges)), 1)
+        self.assertEqual(by_range["N5"], 61)
+        self.assertEqual(by_range["N6"], 92)
+        self.assertEqual(by_range["O5"], '=IF(OR(N5="";M5="");"";N5-M5)')
+        self.assertEqual(by_range["U5"], '=IFERROR(R5/N5)')
+        self.assertNotIn("campaign:5:lead", expected)
 
 
 if __name__ == "__main__":

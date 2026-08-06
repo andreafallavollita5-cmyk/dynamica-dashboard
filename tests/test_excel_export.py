@@ -350,7 +350,7 @@ class ClientExcelExportTests(unittest.TestCase):
             source,
         )
 
-    def test_combined_campaign_cells_are_merged_except_effective_leads(self):
+    def test_adjacent_campaign_cells_are_not_merged(self):
         parent = report_row(
             excel_row=9,
             campaign_name="DYN_VELOCE Cessione del Quinto [Esatta]",
@@ -392,7 +392,7 @@ class ClientExcelExportTests(unittest.TestCase):
             self.assertEqual(second, first + 1)
             merged = {str(item) for item in report.merged_cells.ranges}
             for column in ("K", "L", "M", "O", "U", "V"):
-                self.assertIn(f"{column}{first}:{column}{second}", merged)
+                self.assertNotIn(f"{column}{first}:{column}{second}", merged)
             self.assertNotIn(f"N{first}:N{second}", merged)
             self.assertEqual(report.cell(first, 14).value, 61)
             self.assertEqual(report.cell(second, 14).value, 92)
