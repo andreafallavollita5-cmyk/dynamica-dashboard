@@ -190,14 +190,20 @@ def ratio(numerator: float, denominator: float) -> float | None:
     return numerator / denominator
 
 
-def calculate_effectiveness_index(
-    lead_ratio: float | None,
-    delivery_ratio: float | None,
+def calculate_cpl_efficiency(
+    effective_cpl: float | None,
+    target_cpl: float | None,
 ) -> float | None:
-    """Compare lead progress with spending progress."""
-    if lead_ratio is None or delivery_ratio is None:
+    """Return positive efficiency when effective CPL is below target."""
+    if (
+        effective_cpl is None
+        or target_cpl is None
+        or not target_cpl
+        or math.isnan(effective_cpl)
+        or math.isnan(target_cpl)
+    ):
         return None
-    return lead_ratio - delivery_ratio
+    return 1 - (effective_cpl / target_cpl)
 
 
 def first_value(metadata: dict, keys: Iterable[str]) -> str:
@@ -2328,7 +2334,7 @@ def main() -> None:
 
     delivery_width = min(max(delivery_ratio or 0, 0), 1.2) / 1.2 * 100
     lead_width = min(max(lead_ratio or 0, 0), 1.2) / 1.2 * 100
-    effectiveness_index = calculate_effectiveness_index(lead_ratio, delivery_ratio)
+    cpl_efficiency = calculate_cpl_efficiency(cpl_avg, cpl_target_avg)
 
     lead_fraction = min(max(lead_ratio if lead_ratio is not None else 1, 0), 1)
     lead_progress = lead_fraction * 100
@@ -2350,7 +2356,7 @@ def main() -> None:
             'd="M20 105 A90 90 0 0 1 200 105"/>'
         )
 
-    efficiency_for_needle = min(max(effectiveness_index or 0, -0.2), 0.2)
+    efficiency_for_needle = min(max(cpl_efficiency or 0, -0.2), 0.2)
     if efficiency_for_needle < -0.05:
         efficiency_fraction = ((efficiency_for_needle + 0.2) / 0.15) / 3
     elif efficiency_for_needle <= 0.05:
@@ -2366,11 +2372,11 @@ def main() -> None:
     efficiency_base_1_y = 105 + efficiency_perp_y
     efficiency_base_2_x = 110 - efficiency_perp_x
     efficiency_base_2_y = 105 - efficiency_perp_y
-    if effectiveness_index is None:
+    if cpl_efficiency is None:
         efficiency_color = "#ff8a00"
-    elif effectiveness_index < -0.05:
+    elif cpl_efficiency < -0.05:
         efficiency_color = "#f20d18"
-    elif effectiveness_index <= 0.05:
+    elif cpl_efficiency <= 0.05:
         efficiency_color = "#ff8a00"
     else:
         efficiency_color = "#08a642"
@@ -2417,7 +2423,7 @@ def main() -> None:
         st.markdown(
             f"""
             <div class="panel">
-              <div class="panel-title">Indice efficacia campagna</div>
+              <div class="panel-title">Indice efficienza CPL</div>
               <div class="cpl-gauge" style="--eff-color:{efficiency_color}">
                 <svg viewBox="0 0 220 125" aria-hidden="true">
                   <path class="cpl-arc" stroke="#f20d18" d="M20 105 A90 90 0 0 1 65 27.1"/>
@@ -2428,8 +2434,8 @@ def main() -> None:
                     <circle class="gauge-pin cpl-pin" cx="110" cy="105" r="7"/>
                   </g>
                 </svg>
-                <div class="cpl-gauge-value">{percent(effectiveness_index) if effectiveness_index is not None else '—'}</div>
-                <div class="eff-note"><span class="legend-dot" style="background:#f20d18"></span>rosso = efficacia inferiore <span class="legend-dot" style="background:#ff9d00"></span>giallo = in linea <span class="legend-dot" style="background:#08a642"></span>verde = efficacia superiore</div>
+                <div class="cpl-gauge-value">{percent(cpl_efficiency) if cpl_efficiency is not None else '—'}</div>
+                <div class="eff-note"><span class="legend-dot" style="background:#f20d18"></span>rosso = CPL sopra target <span class="legend-dot" style="background:#ff9d00"></span>giallo = in linea <span class="legend-dot" style="background:#08a642"></span>verde = CPL sotto target</div>
               </div>
             </div>
             """,
