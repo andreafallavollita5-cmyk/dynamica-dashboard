@@ -806,7 +806,7 @@ def apply_style(st) -> None:
         [data-testid="stDataFrame"] { font-size: 11px; }
         .campaign-table-wrap { position:relative; left:-10px; top:-10px; width:calc(100% + 10px); overflow-x:auto; overflow-y:hidden; border:1px solid var(--line); border-radius:8px; background:var(--card-bg); box-shadow:0 8px 22px rgba(33,33,33,.07); scrollbar-gutter:stable; }
         .campaign-table-wrap:focus-visible { outline:3px solid rgba(0,165,180,.35); outline-offset:2px; }
-        .campaign-table { width:100%; min-width:1700px; border-collapse:collapse; table-layout:fixed; font-size:12px; line-height:16px; color:var(--table-text); }
+        .campaign-table { width:100%; min-width:1700px; border-collapse:separate !important; border-spacing:0; table-layout:fixed; font-size:12px; line-height:16px; color:var(--table-text); }
         .campaign-table th,.campaign-table td { height:40px; padding:7px 9px; border-bottom:1px solid var(--border); text-align:center; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
         .campaign-table th { height:44px; font-size:11px; font-weight:700; line-height:14px; color:#fff; white-space:normal; overflow:visible; text-overflow:clip; background:#3a4454; }
         .campaign-table td { font-weight:500; }
@@ -815,6 +815,22 @@ def apply_style(st) -> None:
         .campaign-table th.col-funnel,.campaign-table td.col-funnel { width:120px; text-align:left; }
         .campaign-table th.col-canale,.campaign-table td.col-canale { width:90px; }
         .campaign-table th.col-campagna,.campaign-table td.col-campagna { width:300px; text-align:left; }
+        .campaign-table th.col-funnel,.campaign-table td.col-funnel,
+        .campaign-table th.col-canale,.campaign-table td.col-canale,
+        .campaign-table th.col-campagna,.campaign-table td.col-campagna {
+          position:sticky;
+          z-index:2;
+          background:var(--card-bg);
+        }
+        .campaign-table th.col-funnel,.campaign-table td.col-funnel { left:0; }
+        .campaign-table th.col-canale,.campaign-table td.col-canale { left:120px; }
+        .campaign-table th.col-campagna,.campaign-table td.col-campagna {
+          left:210px;
+          box-shadow:8px 0 12px -12px rgba(33,33,33,.75);
+        }
+        .campaign-table thead th.col-funnel,
+        .campaign-table thead th.col-canale,
+        .campaign-table thead th.col-campagna { z-index:4; }
         .campaign-table th.col-metric,.campaign-table td.col-metric { width:105px; }
         .campaign-table th.col-action,.campaign-table td.col-action { width:245px; text-align:left; }
         .campaign-table td.col-action { white-space:normal; overflow:visible; text-overflow:clip; }
@@ -860,7 +876,7 @@ def apply_style(st) -> None:
         .campaign-table tbody td:first-child { border-left:1px solid #3a4454 !important; }
         .campaign-table tbody td { border-right:1px solid #3a4454 !important; }
         .campaign-table tr:has(.subtotal-row-marker) td {
-          background:rgba(0,165,180,.15) !important;
+          background:color-mix(in srgb, var(--card-bg) 85%, #00a5b4 15%) !important;
           color:var(--text-main) !important;
           font-weight:700 !important;
           border-top:2px solid #3a4454 !important;
@@ -987,6 +1003,14 @@ def apply_style(st) -> None:
           .campaign-table-wrap { left:0; top:0; width:100%; overflow-x:auto; }
           .campaign-table { min-width:1700px; }
           .cpl-gauge .eff-note { left:-10px; right:-10px; font-size:8px; }
+        }
+        @media (max-width: 899px) {
+          .campaign-table th.col-funnel,.campaign-table td.col-funnel,
+          .campaign-table th.col-canale,.campaign-table td.col-canale,
+          .campaign-table th.col-campagna,.campaign-table td.col-campagna {
+            position:static;
+            box-shadow:none;
+          }
         }
         </style>
         """,
@@ -1480,7 +1504,6 @@ def _update_dynamic_spend_summaries(pd, frame) -> None:
             "delta_speso": delta,
             "delta_delivery_pct": delivery,
         }
-
     total = summary_values(frame)
     for field, value in total.items():
         frame[f"kpi_{field}_totale"] = value
