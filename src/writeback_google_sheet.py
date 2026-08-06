@@ -33,6 +33,8 @@ from src.google_sheets_client import (
     _load_sheet_config,
     _resolve_service_account_path,
 )
+from src.dates import weekdays_inclusive, weekdays_in_month
+from src.report_groups import is_dem_campaign
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -52,6 +54,8 @@ SUBTOTAL_ROWS = {
 TOTAL_ROW = 29
 FIRST_WRITABLE_COLUMN = 12  # L
 LAST_WRITABLE_COLUMN = 22  # V
+PERIOD_CONTROL_CELLS = {"H26", "I26", "K26", "L26"}
+PROTECTED_PERIOD_CONTROL_COORDINATES = {(26, 8), (26, 9), (26, 11)}
 
 
 class SheetWritebackError(RuntimeError):
@@ -75,6 +79,14 @@ class Period:
     @property
     def elapsed_days(self) -> int:
         return (self.end_date - self.start_date).days + 1
+
+    @property
+    def dem_days_in_month(self) -> int:
+        return weekdays_in_month(self.start_date)
+
+    @property
+    def dem_elapsed_days(self) -> int:
+        return weekdays_inclusive(self.start_date, self.end_date)
 
 
 @dataclass(frozen=True)
@@ -208,7 +220,7 @@ def _campaign_target_row(
                 f"ID campagna {campaign_id} ({name}) non trovato in manual_inputs."
             )
         return ids[campaign_id]
-    if name in DEM_NAMES:
+    if is_dem_campaign(report_row):
         if name not in names:
             raise SheetWritebackError(f"Campagna DEM non trovata: {name}")
         return names[name]
@@ -217,10 +229,17 @@ def _campaign_target_row(
     )
 
 
-def _derived_formulas(row: int, include_lead_plan: bool = True) -> dict[int, str]:
+def _derived_formulas(
+    row: int,
+    include_lead_plan: bool = True,
+    *,
+    dem_spending: bool = False,
+) -> dict[int, str]:
+    spending_month_days = "I$26" if dem_spending else "H$26"
+    spending_elapsed_days = "L$26" if dem_spending else "K$26"
     formulas = {
-        16: f'=IF(F{row}="";"";F{row}/H$35)',
-        17: f'=IF(P{row}="";"";P{row}*L$35)',
+        16: f'=IF(F{row}="";"";F{row}/{spending_month_days})',
+        17: f'=IF(P{row}="";"";P{row}*{spending_elapsed_days})',
         19: f'=IF(OR(R{row}="";Q{row}="");"";R{row}-Q{row})',
         20: f"=IFERROR(S{row}/Q{row})",
         21: f"=IFERROR(R{row}/N{row})",
@@ -229,16 +248,18 @@ def _derived_formulas(row: int, include_lead_plan: bool = True) -> dict[int, str
     if include_lead_plan:
         formulas.update(
             {
-                12: f'=IF(K{row}="";"";K{row}/H$35)',
-                13: f'=IF(L{row}="";"";L{row}*L$35)',
+                12: f'=IF(K{row}="";"";K{row}/H$26)',
+                13: f'=IF(L{row}="";"";L{row}*K$26)',
                 15: f'=IF(OR(N{row}="";M{row}="");"";N{row}-M{row})',
             }
         )
     return formulas
 
 
-def _summary_formulas(row: int, first: int, last: int) -> dict[int, str]:
-    formulas = _derived_formulas(row)
+def _summary_formulas(
+    row: int, first: int, last: int, *, dem_spending: bool = False
+) -> dict[int, str]:
+    formulas = _derived_formulas(row, dem_spending=dem_spending)
     formulas[14] = f"=SUM(N{first}:N{last})"
     formulas[18] = f"=SUM(R{first}:R{last})"
     return formulas
@@ -283,7 +304,7 @@ def build_update_plan(
         lead_bucket["names"].append(str(report_row.get("campaign_name", "")))
         spend_bucket["spend"] = float(spend_bucket["spend"]) + (spend or 0.0)
         spend_bucket["names"].append(str(report_row.get("campaign_name", "")))
-        is_dem = str(report_row.get("campaign_name", "")).strip() in DEM_NAMES
+        is_dem = is_dem_campaign(report_row)
         spend_bucket["dem"] = bool(spend_bucket["dem"]) or is_dem
         if is_dem:
             cpl = _number(report_row.get("cpl_target"), "cpl_target")
@@ -305,6 +326,14 @@ def build_update_plan(
         ),
         PlannedUpdate("L34", [["giorni trascorsi"]], "controllo periodo"),
         PlannedUpdate("L35", [[period.elapsed_days]], "controllo periodo"),
+        PlannedUpdate("H26", [[period.days_in_month]], "giorni mese"),
+        PlannedUpdate(
+            "I26", [[period.dem_days_in_month]], "giorni mese DEM feriali"
+        ),
+        PlannedUpdate("K26", [[period.elapsed_days]], "giorni precedenti"),
+        PlannedUpdate(
+            "L26", [[period.dem_elapsed_days]], "giorni precedenti DEM feriali"
+        ),
     ]
 
     for row, bucket in sorted(lead_groups.items()):
@@ -329,7 +358,9 @@ def build_update_plan(
                 PlannedUpdate(_cell(row, 18), [[spend]], "speso Ads ufficiale")
             )
         include_lead_plan = row not in {2, 4, 6}
-        formulas = _derived_formulas(row, include_lead_plan)
+        formulas = _derived_formulas(
+            row, include_lead_plan, dem_spending=bool(bucket["dem"])
+        )
         child_row = pair_by_parent.get(row)
         if child_row is not None:
             formulas.update(
@@ -348,7 +379,9 @@ def build_update_plan(
             "TOT Lead Veloce": (8, 23),
             "TOT DEM": (25, 27),
         }[label]
-        for column, formula in _summary_formulas(row, *source).items():
+        for column, formula in _summary_formulas(
+            row, *source, dem_spending=label == "TOT DEM"
+        ).items():
             updates.append(PlannedUpdate(_cell(row, column), [[formula]], label))
 
     area_official = frame.loc[
@@ -373,6 +406,8 @@ def build_update_plan(
             12: "=L7+L24+L28",
             13: "=M7+M24+M28",
             14: "=N7+N24+N28",
+            16: "=P7+P24+P28",
+            17: "=Q7+Q24+Q28",
             18: "=R7+R24+R28",
         }
     )
@@ -382,11 +417,11 @@ def build_update_plan(
         )
 
     bottom_formulas = {
-        "P35": "=(F2+F4+F8+F9+F11+F13+F15+F16)/H35*L35",
+        "P35": "=(F2+F4+F8+F9+F11+F13+F15+F16)/H26*K26",
         "Q35": "=R2+R4+R8+R9+R11+R13+R15+R16",
-        "P36": "=(F6+F17+F19+F20+F21+F22+F23)/H35*L35",
+        "P36": "=(F6+F17+F19+F20+F21+F22+F23)/H26*K26",
         "Q36": "=R6+R17+R19+R20+R21+R22+R23",
-        "P37": "=SUM(F25:F27)/H35*L35",
+        "P37": "=SUM(F25:F27)/I26*L26",
         "Q37": "=SUM(R25:R27)",
         "P38": "=SUM(P35:P37)",
         "Q38": "=SUM(Q35:Q37)",
@@ -400,9 +435,12 @@ def build_update_plan(
             if not char.isalpha():
                 break
             column = column * 26 + ord(char.upper()) - 64
-        if not FIRST_WRITABLE_COLUMN <= column <= LAST_WRITABLE_COLUMN:
+        if (
+            update.range not in PERIOD_CONTROL_CELLS
+            and not FIRST_WRITABLE_COLUMN <= column <= LAST_WRITABLE_COLUMN
+        ):
             raise SheetWritebackError(
-                f"Piano non sicuro: {update.range} è fuori dall'intervallo L:V."
+                f"Piano non sicuro: {update.range} non è una cella autorizzata."
             )
 
     official = frame.loc[frame["row_type"].isin(["subtotal", "total"])].copy()
@@ -474,13 +512,27 @@ def _verify_results(
     expected_merges: list[dict],
     properties_before: dict,
     expected: dict[str, float],
+    period: Period,
     spreadsheet: gspread.Spreadsheet,
 ) -> None:
     protected_after = worksheet.get(
         "A1:K66", value_render_option=ValueRenderOption.formula
     )
-    if _padded(protected_before, 66, 11) != _padded(protected_after, 66, 11):
-        raise SheetWritebackError("Verifica fallita: una cella in A:K è cambiata.")
+    protected_before_padded = _padded(protected_before, 66, 11)
+    protected_after_padded = _padded(protected_after, 66, 11)
+    for row_index in range(66):
+        for column_index in range(11):
+            coordinate = (row_index + 1, column_index + 1)
+            if coordinate in PROTECTED_PERIOD_CONTROL_COORDINATES:
+                continue
+            if (
+                protected_before_padded[row_index][column_index]
+                != protected_after_padded[row_index][column_index]
+            ):
+                raise SheetWritebackError(
+                    "Verifica fallita: una cella manuale fuori dai controlli "
+                    "periodo è cambiata."
+                )
     merges_after, properties_after = _manual_sheet_metadata(spreadsheet)
     if expected_merges != merges_after:
         raise SheetWritebackError("Verifica fallita: unioni celle inattese.")
@@ -491,6 +543,28 @@ def _verify_results(
     after_structure = {key: properties_after.get(key) for key in structural_keys}
     if before_structure != after_structure:
         raise SheetWritebackError("Verifica fallita: struttura worksheet modificata.")
+
+    period_controls = _padded(
+        worksheet.get(
+            "H26:L26", value_render_option=ValueRenderOption.unformatted
+        ),
+        1,
+        5,
+    )[0]
+    expected_controls = {
+        "H26": (0, period.days_in_month),
+        "I26": (1, period.dem_days_in_month),
+        "K26": (3, period.elapsed_days),
+        "L26": (4, period.dem_elapsed_days),
+    }
+    for target, (index, expected_value) in expected_controls.items():
+        actual = _number(period_controls[index], target)
+        if actual is None or not math.isclose(
+            actual, expected_value, rel_tol=0, abs_tol=0
+        ):
+            raise SheetWritebackError(
+                f"Verifica {target} fallita: {actual} != {expected_value}"
+            )
 
     values = _padded(
         worksheet.get("A1:V29", value_render_option=ValueRenderOption.unformatted),
@@ -567,6 +641,8 @@ def run_writeback(
         "end_date": period.end_date.isoformat(),
         "days_in_month": period.days_in_month,
         "elapsed_days": period.elapsed_days,
+        "dem_days_in_month": period.dem_days_in_month,
+        "dem_elapsed_days": period.dem_elapsed_days,
         "updates": len(updates),
         "ranges": [update.range for update in updates],
         "unmerged_lead_ranges": [
@@ -603,6 +679,7 @@ def run_writeback(
             expected_merges,
             properties,
             expected,
+            period,
             spreadsheet,
         )
     except APIError as exc:

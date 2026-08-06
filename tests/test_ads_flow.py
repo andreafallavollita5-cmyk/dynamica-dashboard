@@ -186,7 +186,7 @@ class AdsReportFlowTests(unittest.TestCase):
         )
         self.assertEqual(rows[0]["sheet_dem_lead_effettive_subtotal"], 524)
 
-    def test_legacy_sheet_formulas_and_manual_non_ads_spend_are_preserved(self):
+    def test_estimates_are_recalculated_while_manual_non_ads_spend_is_preserved(self):
         manual = manual_row(
             platform="Dem",
             channel="DEM",
@@ -204,8 +204,9 @@ class AdsReportFlowTests(unittest.TestCase):
         rows = build_report_rows(
             [manual], [], [], date(2026, 7, 1), date(2026, 7, 12)
         )
-        self.assertAlmostEqual(rows[0]["stima_lead_progressiva"], 228.8329519450801)
-        self.assertAlmostEqual(rows[0]["delta_lead"], 10.167048054919889)
+        expected_leads = 657.8947368421053 / 31 * 12
+        self.assertAlmostEqual(rows[0]["stima_lead_progressiva"], expected_leads)
+        self.assertAlmostEqual(rows[0]["delta_lead"], 239 - expected_leads)
         self.assertAlmostEqual(rows[0]["stima_spending_progressiva"], 1739.1304347826087)
         self.assertAlmostEqual(rows[0]["speso_effettivo"], 1816.4)
         self.assertAlmostEqual(rows[0]["cpl_effettivo"], 7.6)
@@ -226,8 +227,8 @@ class AdsReportFlowTests(unittest.TestCase):
             date(2026, 7, 1),
             date(2026, 7, 12),
         )
-        self.assertEqual(rows[0]["delta_lead"], 10)
-        self.assertEqual(rows[0]["kpi_delta_lead_totale"], 10)
+        self.assertEqual(rows[0]["delta_lead"], -40)
+        self.assertEqual(rows[0]["kpi_delta_lead_totale"], -40)
 
     def test_ads_spend_overrides_legacy_manual_spend(self):
         rows = build_report_rows(

@@ -94,8 +94,20 @@ hash, Campagna, UTM, data e risultato del matching. È escluso da GitHub.
 
 ## Write-back Google Sheet
 
-Dopo la generazione di `data/report_data.csv`, la pipeline aggiorna il
-worksheet `manual_inputs` con:
+Prima di generare `data/report_data.csv`, la pipeline aggiorna nel worksheet
+`manual_inputs` i quattro controlli periodo e le formule di stima con:
+
+```powershell
+.\.venv\Scripts\python.exe -m src.update_sheet_estimates
+```
+
+Le stime lead usano sempre i giorni di calendario. Lo spending usa i giorni di
+calendario per le campagne normali e i soli lunedi-venerdi per le campagne con
+un riferimento `DEM` in funnel, piattaforma, canale o nome campagna. Il primo
+giorno del mese viene chiuso automaticamente il mese precedente.
+
+Dopo la generazione di `data/report_data.csv`, la pipeline aggiorna lead,
+speso e formule derivate nel worksheet con:
 
 ```powershell
 .\.venv\Scripts\python.exe -m src.writeback_google_sheet

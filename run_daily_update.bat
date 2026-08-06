@@ -17,6 +17,12 @@ if errorlevel 1 (
   exit /b 1
 )
 
+"%PYTHON%" -m src.update_sheet_estimates >>logs\daily_update.log 2>&1
+if errorlevel 1 (
+  echo [%date% %time%] Aggiornamento controlli e formule stima fallito>>logs\daily_update.log
+  exit /b 1
+)
+
 "%PYTHON%" -m src.build_report_data >>logs\daily_update.log 2>&1
 
 if errorlevel 1 (

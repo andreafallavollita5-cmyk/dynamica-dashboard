@@ -239,7 +239,7 @@ def apply_style(st) -> None:
           --table-row: #ffffff;
           --table-text: #007f8b;
           --table-stripe: #f7fbfb;
-          --table-hover: rgba(0,165,180,.10);
+          --table-hover: color-mix(in srgb, var(--card-bg) 90%, #00a5b4 10%);
           --field-bg: #f7f7f7;
           --button-bg: rgba(0,165,180,.15);
           --table-section-border: #3a4454;
@@ -260,7 +260,7 @@ def apply_style(st) -> None:
           --table-row: #282f3b;
           --table-text: #39c1cd;
           --table-stripe: #303846;
-          --table-hover: rgba(0,165,180,.18);
+          --table-hover: color-mix(in srgb, var(--card-bg) 82%, #00a5b4 18%);
           --field-bg: #282f3b;
           --button-bg: rgba(0,165,180,.15);
           --table-section-border: #ffffff;

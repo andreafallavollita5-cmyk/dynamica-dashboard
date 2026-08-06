@@ -64,11 +64,6 @@ def _number(value: object) -> float | None:
         return None
 
 
-def _sheet_value_or(manual: dict, key: str, fallback: float | None) -> float | None:
-    """Prefer an evaluated legacy-Sheet value when that column is present."""
-    return _number(manual.get(key)) if key in manual else fallback
-
-
 MANUAL_SUMMARY_FIELDS = (
     "investimento_media",
     "percentuale_investimento",
@@ -117,7 +112,13 @@ def _official_summary_values(
 
 
 def build_official_summaries(
-    manual_rows: list[dict], output_rows: list[dict]
+    manual_rows: list[dict],
+    output_rows: list[dict],
+    *,
+    days_in_month: int,
+    elapsed_days: int,
+    dem_days_in_month: int,
+    dem_elapsed_days: int,
 ) -> dict[str, float | None]:
     """Return official total/subtotal fields to duplicate on the final DataFrame."""
     if not manual_rows or not output_rows:
@@ -130,9 +131,8 @@ def build_official_summaries(
         else None
     )
     total = _official_summary_values(official, "sheet_total_", "", total_spend)
-    summaries = {
-        f"kpi_{field}_totale": total.get(field) for field in SUMMARY_FIELDS
-    }
+    subtotal_values: list[dict[str, float | None]] = []
+    summaries: dict[str, float | None] = {}
 
     for slug, _label in CLIENT_GROUPS:
         group_rows = [
@@ -147,12 +147,90 @@ def build_official_summaries(
         subtotal = _official_summary_values(
             official, f"sheet_{slug}_", "_subtotal", group_spend
         )
+        calculated = (
+            _summary_row(group_rows, f"TOT {slug}", "subtotal")
+            if group_rows else {}
+        )
+        for field in MANUAL_SUMMARY_FIELDS:
+            if subtotal.get(field) is None:
+                subtotal[field] = _number(calculated.get(field))
+
+        lead_target = subtotal.get("stima_lead")
+        subtotal["stima_lead_giornaliere"] = safe_divide(
+            lead_target, days_in_month
+        )
+        subtotal["stima_lead_progressiva"] = (
+            subtotal["stima_lead_giornaliere"] * elapsed_days
+            if subtotal["stima_lead_giornaliere"] is not None else None
+        )
+        spending_month_days = dem_days_in_month if slug == "dem" else days_in_month
+        spending_elapsed_days = dem_elapsed_days if slug == "dem" else elapsed_days
+        subtotal["stima_spending_giornaliera"] = safe_divide(
+            subtotal.get("investimento_media"), spending_month_days
+        )
+        subtotal["stima_spending_progressiva"] = (
+            subtotal["stima_spending_giornaliera"] * spending_elapsed_days
+            if subtotal["stima_spending_giornaliera"] is not None else None
+        )
+        subtotal["delta_lead"] = (
+            subtotal["lead_effettive"] - subtotal["stima_lead_progressiva"]
+            if subtotal.get("lead_effettive") is not None
+            and subtotal["stima_lead_progressiva"] is not None
+            else None
+        )
+        subtotal["delta_speso"] = (
+            group_spend - subtotal["stima_spending_progressiva"]
+            if group_spend is not None
+            and subtotal["stima_spending_progressiva"] is not None
+            else None
+        )
+        subtotal["delta_delivery_pct"] = safe_divide(
+            subtotal["delta_speso"], subtotal["stima_spending_progressiva"]
+        )
+        subtotal_values.append(subtotal)
         summaries.update(
             {
                 f"subtotal_{slug}_{field}": subtotal.get(field)
                 for field in SUMMARY_FIELDS
             }
         )
+
+    for field in (
+        "stima_lead_giornaliere",
+        "stima_lead_progressiva",
+        "stima_spending_giornaliera",
+        "stima_spending_progressiva",
+    ):
+        values = [subtotal.get(field) for subtotal in subtotal_values]
+        complete = values and all(value is not None for value in values)
+        base_field = (
+            "stima_lead" if field.startswith("stima_lead_")
+            else "investimento_media"
+        )
+        if complete or total.get(base_field) is None or total.get(field) is None:
+            total[field] = (
+                sum(value or 0 for value in values)
+                if any(value is not None for value in values)
+                else None
+            )
+    total["delta_lead"] = (
+        total["lead_effettive"] - total["stima_lead_progressiva"]
+        if total.get("lead_effettive") is not None
+        and total["stima_lead_progressiva"] is not None
+        else None
+    )
+    total["delta_speso"] = (
+        total_spend - total["stima_spending_progressiva"]
+        if total_spend is not None
+        and total["stima_spending_progressiva"] is not None
+        else None
+    )
+    total["delta_delivery_pct"] = safe_divide(
+        total["delta_speso"], total["stima_spending_progressiva"]
+    )
+    summaries.update(
+        {f"kpi_{field}_totale": total.get(field) for field in SUMMARY_FIELDS}
+    )
     return summaries
 
 
@@ -351,24 +429,12 @@ def build_report_rows(
                     source_parts.append("manual:sheet_spend")
 
         calculated_lead_giornaliere = safe_divide(stima_lead, days_in_month)
-        stima_lead_giornaliere = (
-            calculated_lead_giornaliere
-            if crm_mode
-            else _sheet_value_or(
-                manual, "stima_lead_giornaliere", calculated_lead_giornaliere
-            )
-        )
+        stima_lead_giornaliere = calculated_lead_giornaliere
         calculated_lead_progressiva = (
             stima_lead_giornaliere * elapsed_days
             if stima_lead_giornaliere is not None else None
         )
-        stima_lead_progressiva = (
-            calculated_lead_progressiva
-            if crm_mode
-            else _sheet_value_or(
-                manual, "stima_lead_progressiva", calculated_lead_progressiva
-            )
-        )
+        stima_lead_progressiva = calculated_lead_progressiva
         spending_days_in_month = dem_days_in_month if is_dem else days_in_month
         spending_elapsed_days = dem_elapsed_days if is_dem else elapsed_days
         calculated_spending_progressiva = (
@@ -378,29 +444,13 @@ def build_report_rows(
         calculated_spending_giornaliera = safe_divide(
             investimento, spending_days_in_month
         )
-        stima_spending_giornaliera = (
-            calculated_spending_giornaliera
-            if crm_mode or is_dem
-            else _sheet_value_or(
-                manual, "stima_spending_giornaliera", calculated_spending_giornaliera
-            )
-        )
-        stima_spending_progressiva = (
-            calculated_spending_progressiva
-            if crm_mode or is_dem
-            else _sheet_value_or(
-                manual, "stima_spending_progressiva", calculated_spending_progressiva
-            )
-        )
+        stima_spending_giornaliera = calculated_spending_giornaliera
+        stima_spending_progressiva = calculated_spending_progressiva
         calculated_delta_lead = (
             lead_effettive - stima_lead_progressiva
             if lead_effettive is not None and stima_lead_progressiva is not None else None
         )
-        delta_lead = (
-            calculated_delta_lead
-            if crm_mode
-            else _sheet_value_or(manual, "delta_lead", calculated_delta_lead)
-        )
+        delta_lead = calculated_delta_lead
         delta_speso = (
             speso_effettivo - stima_spending_progressiva
             if speso_effettivo is not None and stima_spending_progressiva is not None else None
@@ -469,14 +519,22 @@ def build_report_rows(
         )
 
     totals = {
-        **build_official_summaries(manual_rows, output),
+        **build_official_summaries(
+            manual_rows,
+            output,
+            days_in_month=days_in_month,
+            elapsed_days=elapsed_days,
+            dem_days_in_month=dem_days_in_month,
+            dem_elapsed_days=dem_elapsed_days,
+        ),
         "sheet_area_clienti_lead_effettive_subtotal": _number(
             manual_rows[0].get("sheet_area_clienti_lead_effettive_subtotal")
         ),
-        "sheet_area_clienti_stima_lead_progressiva_subtotal": _number(
-            manual_rows[0].get("sheet_area_clienti_stima_lead_progressiva_subtotal")
-        ),
+        "sheet_area_clienti_stima_lead_progressiva_subtotal": None,
     }
+    totals["sheet_area_clienti_stima_lead_progressiva_subtotal"] = totals.get(
+        "subtotal_area_clienti_stima_lead_progressiva"
+    )
     for row in output:
         row.update(totals)
     return output

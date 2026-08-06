@@ -10,6 +10,8 @@ from src.writeback_google_sheet import (
     _without_combined_lead_merges,
     build_update_plan,
 )
+from src.update_sheet_estimates import build_estimate_updates
+from src.writeback_google_sheet import Period
 
 
 def report_row(**overrides):
@@ -80,7 +82,43 @@ def official_rows():
 
 
 class WritebackPlanTests(unittest.TestCase):
-    def test_merged_campaign_ids_are_aggregated_and_only_l_to_v_are_touched(self):
+    def test_legacy_layout_uses_calendar_days_and_dem_weekdays(self):
+        values = [[""] * 22 for _ in range(66)]
+        values[0][:6] = ["Funnel", "Canale", "Canale", "ID", "Campagna", "Investimento"]
+        values[1][:6] = ["Lead Veloce", "Google", "Search", "1", "Search", 3100]
+        values[1][10] = 310
+        values[1][11:17] = ["old", "old", "", "", "old", "old"]
+        values[2][:6] = ["TOT Lead Veloce", "", "", "", "", 3100]
+        values[2][10] = 310
+        values[2][11:17] = ["old", "old", "", "", "old", "old"]
+        values[3][:6] = ["Lead Veloce", "Dem", "DEM", "", "DEM test", 2100]
+        values[3][10] = 210
+        values[3][11:17] = ["old", "old", "", "", "old", "old"]
+        values[4][:6] = ["TOT DEM", "", "", "", "", 2100]
+        values[4][10] = 210
+        values[4][11:17] = ["old", "old", "", "", "old", "old"]
+        values[5][5] = "=F3+F5"
+        values[5][10] = "=K3+K5"
+        values[5][15:17] = ["old", "old"]
+        values[23][10] = "controllo - funnel clienti + veloce"
+
+        updates = build_estimate_updates(
+            values, Period(date(2026, 8, 1), date(2026, 8, 5))
+        )
+        by_range = {update.range: update.values[0][0] for update in updates}
+
+        self.assertEqual(by_range["H26"], 31)
+        self.assertEqual(by_range["I26"], 21)
+        self.assertEqual(by_range["K26"], 5)
+        self.assertEqual(by_range["L26"], 3)
+        self.assertEqual(by_range["Q2"], '=IF(P2="";"";P2*K$26)')
+        self.assertEqual(by_range["P4"], '=IF(F4="";"";F4/I$26)')
+        self.assertEqual(by_range["Q4"], '=IF(P4="";"";P4*L$26)')
+        self.assertEqual(by_range["M4"], '=IF(L4="";"";L4*K$26)')
+        self.assertEqual(by_range["P6"], "=P3+P5")
+        self.assertEqual(by_range["Q6"], "=Q3+Q5")
+
+    def test_merged_campaign_ids_and_period_controls_are_updated_safely(self):
         frame = pd.DataFrame(
             [
                 report_row(),
@@ -123,10 +161,55 @@ class WritebackPlanTests(unittest.TestCase):
         self.assertEqual(by_range["R2"], 300)
         self.assertEqual(by_range["R25"], "=N25*J25")
         self.assertEqual(by_range["L35"], 17)
+        self.assertEqual(by_range["H26"], 31)
+        self.assertEqual(by_range["I26"], 23)
+        self.assertEqual(by_range["K26"], 17)
+        self.assertEqual(by_range["L26"], 13)
+        self.assertEqual(by_range["L24"], '=IF(K24="";"";K24/H$26)')
+        self.assertEqual(by_range["M24"], '=IF(L24="";"";L24*K$26)')
+        self.assertEqual(by_range["P2"], '=IF(F2="";"";F2/H$26)')
+        self.assertEqual(by_range["Q2"], '=IF(P2="";"";P2*K$26)')
+        self.assertEqual(by_range["P25"], '=IF(F25="";"";F25/I$26)')
+        self.assertEqual(by_range["Q25"], '=IF(P25="";"";P25*L$26)')
+        self.assertEqual(by_range["M25"], '=IF(L25="";"";L25*K$26)')
+        self.assertEqual(by_range["P29"], "=P7+P24+P28")
+        self.assertEqual(by_range["Q29"], "=Q7+Q24+Q28")
         self.assertEqual(by_range["N29"], "=N7+N24+N28")
         self.assertEqual(by_range["N7"], 0)
         self.assertNotIn(",", by_range["P35"])
-        self.assertTrue(all(12 <= ord(key[0]) - 64 <= 22 for key in by_range))
+        self.assertEqual(
+            by_range["P35"],
+            "=(F2+F4+F8+F9+F11+F13+F15+F16)/H26*K26",
+        )
+        self.assertEqual(by_range["P37"], "=SUM(F25:F27)/I26*L26")
+        control_cells = {"H26", "I26", "K26", "L26"}
+        self.assertTrue(
+            all(
+                key in control_cells or 12 <= ord(key[0]) - 64 <= 22
+                for key in by_range
+            )
+        )
+
+    def test_full_previous_month_updates_all_period_controls(self):
+        rows = [report_row(), *official_rows()]
+        for row in rows:
+            row["start_date"] = "2026-07-01"
+            row["end_date"] = "2026-07-31"
+
+        period, updates, _ = build_update_plan(
+            pd.DataFrame(rows),
+            sheet_values(),
+            [],
+            expected_end_date=date(2026, 7, 31),
+        )
+        by_range = {update.range: update.values[0][0] for update in updates}
+
+        self.assertEqual(period.elapsed_days, 31)
+        self.assertEqual(period.dem_elapsed_days, 23)
+        self.assertEqual(by_range["H26"], 31)
+        self.assertEqual(by_range["I26"], 23)
+        self.assertEqual(by_range["K26"], 31)
+        self.assertEqual(by_range["L26"], 23)
 
     def test_duplicate_sheet_id_aborts_before_writes(self):
         values = sheet_values()
@@ -141,6 +224,28 @@ class WritebackPlanTests(unittest.TestCase):
         )
         with self.assertRaisesRegex(SheetWritebackError, "senza ID"):
             build_update_plan(frame, sheet_values(), [], date(2026, 7, 17))
+
+    def test_dem_reference_in_descriptive_fields_enables_name_fallback(self):
+        frame = pd.DataFrame(
+            [
+                report_row(
+                    campaign_name="DEM DIGITOO",
+                    google_campaign_id="",
+                    platform="Email DEM",
+                    lead_effettive="5",
+                    speso_effettivo="40",
+                    cpl_target="8",
+                ),
+                *official_rows(),
+            ]
+        )
+
+        _, updates, _ = build_update_plan(
+            frame, sheet_values(), [], date(2026, 7, 17)
+        )
+        by_range = {update.range: update.values[0][0] for update in updates}
+        self.assertEqual(by_range["P26"], '=IF(F26="";"";F26/I$26)')
+        self.assertEqual(by_range["Q26"], '=IF(P26="";"";P26*L$26)')
 
     def test_combined_pair_keeps_leads_separate_and_uses_combined_formulas(self):
         frame = pd.DataFrame(

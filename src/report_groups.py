@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+import re
 
 
 CLIENT_GROUPS = (
@@ -32,13 +33,22 @@ SUMMARY_FIELDS = (
 )
 
 
+DEM_REFERENCE = re.compile(r"(?<![0-9a-z])dem(?![0-9a-z])", re.IGNORECASE)
+
+
+def is_dem_campaign(row: Mapping[str, object]) -> bool:
+    """Return whether any descriptive campaign field contains a DEM reference."""
+    return any(
+        DEM_REFERENCE.search(str(row.get(field) or "")) is not None
+        for field in ("funnel", "platform", "channel", "campaign_name")
+    )
+
+
 def client_subtotal_group(row: Mapping[str, object]) -> str:
     """Return the stable slug used by dashboard data and Excel subtotals."""
     funnel = str(row.get("funnel") or "").strip().casefold()
-    platform = str(row.get("platform") or "").strip().casefold()
-    channel = str(row.get("channel") or "").strip().casefold()
     if "area clienti" in funnel:
         return "area_clienti"
-    if platform == "dem" or channel == "dem":
+    if is_dem_campaign(row):
         return "dem"
     return "lead_veloce"
