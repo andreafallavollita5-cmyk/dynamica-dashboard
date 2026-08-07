@@ -499,14 +499,16 @@ delta_cpl = cpl_effettivo - cpl_target
 Eccezione DEM:
 
 ```text
-dem_days_in_month = giorni da lunedi a venerdi nel mese corrente
-dem_elapsed_days = giorni da lunedi a venerdi tra start_date ed end_date inclusi
+dem_days_in_month = giorni lavorativi nel mese corrente, esclusi sabati, domeniche e festivita nazionali italiane
+dem_elapsed_days = giorni lavorativi tra start_date ed end_date inclusi, esclusi sabati, domeniche e festivita nazionali italiane
+stima_lead_giornaliere = stima_lead / dem_days_in_month per le DEM
+stima_lead_progressiva = stima_lead_giornaliere * dem_elapsed_days per le DEM
 stima_spending_progressiva = investimento_media / dem_days_in_month * dem_elapsed_days
 ```
 
-Per le DEM si escludono solo sabato e domenica. Le festivita infrasettimanali
-restano incluse. La regola riguarda lo spending stimato, non le lead stimate o
-lo speso effettivo.
+Per le DEM si escludono sabato, domenica e festivita nazionali italiane.
+La regola riguarda sia lo spending stimato sia le lead stimate, non lo speso
+effettivo o le lead effettive.
 
 Gestione divisioni:
 

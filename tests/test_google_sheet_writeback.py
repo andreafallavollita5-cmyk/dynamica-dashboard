@@ -85,7 +85,7 @@ def official_rows():
 
 
 class WritebackPlanTests(unittest.TestCase):
-    def test_legacy_layout_uses_calendar_days_and_dem_weekdays(self):
+    def test_legacy_layout_uses_calendar_days_and_dem_working_days(self):
         values = [[""] * 22 for _ in range(66)]
         values[0][:6] = ["Funnel", "Canale", "Canale", "ID", "Campagna", "Investimento"]
         values[1][:6] = ["Lead Veloce", "Google", "Search", "1", "Search", 3100]
@@ -110,14 +110,16 @@ class WritebackPlanTests(unittest.TestCase):
         )
         by_range = {update.range: update.values[0][0] for update in updates}
 
-        self.assertEqual(by_range["H26"], 31)
-        self.assertEqual(by_range["I26"], 21)
-        self.assertEqual(by_range["K26"], 5)
-        self.assertEqual(by_range["L26"], 3)
-        self.assertEqual(by_range["Q2"], '=IF(P2="";"";P2*K$26)')
-        self.assertEqual(by_range["P4"], '=IF(F4="";"";F4/I$26)')
-        self.assertEqual(by_range["Q4"], '=IF(P4="";"";P4*L$26)')
-        self.assertEqual(by_range["M4"], '=IF(L4="";"";L4*K$26)')
+        self.assertNotIn("H26", by_range)
+        self.assertNotIn("I26", by_range)
+        self.assertNotIn("K26", by_range)
+        self.assertNotIn("L26", by_range)
+        self.assertEqual(by_range["L2"], '=IF(K2="";"";K2/31)')
+        self.assertEqual(by_range["Q2"], '=IF(P2="";"";P2*5)')
+        self.assertEqual(by_range["P4"], '=IF(F4="";"";F4/21)')
+        self.assertEqual(by_range["Q4"], '=IF(P4="";"";P4*3)')
+        self.assertEqual(by_range["L4"], '=IF(K4="";"";K4/21)')
+        self.assertEqual(by_range["M4"], '=IF(L4="";"";L4*3)')
         self.assertEqual(by_range["P6"], "=P3+P5")
         self.assertEqual(by_range["Q6"], "=Q3+Q5")
 
@@ -151,24 +153,25 @@ class WritebackPlanTests(unittest.TestCase):
         self.assertEqual(by_range["N4"], 20)
         self.assertEqual(by_range["R4"], 200)
         self.assertEqual(by_range["R8"], "=N8*J8")
-        self.assertEqual(by_range["L35"], 17)
-        self.assertEqual(by_range["H26"], 31)
-        self.assertEqual(by_range["I26"], 23)
-        self.assertEqual(by_range["K26"], 17)
-        self.assertEqual(by_range["L26"], 13)
-        self.assertEqual(by_range["P2"], '=IF(F2="";"";F2/H$26)')
-        self.assertEqual(by_range["Q2"], '=IF(P2="";"";P2*K$26)')
-        self.assertEqual(by_range["P8"], '=IF(F8="";"";F8/I$26)')
-        self.assertEqual(by_range["Q8"], '=IF(P8="";"";P8*L$26)')
-        self.assertEqual(by_range["M8"], '=IF(L8="";"";L8*K$26)')
+        self.assertNotIn("L35", by_range)
+        self.assertNotIn("H26", by_range)
+        self.assertNotIn("I26", by_range)
+        self.assertNotIn("K26", by_range)
+        self.assertNotIn("L26", by_range)
+        self.assertEqual(by_range["L2"], '=IF(K2="";"";K2/31)')
+        self.assertEqual(by_range["P2"], '=IF(F2="";"";F2/31)')
+        self.assertEqual(by_range["Q2"], '=IF(P2="";"";P2*17)')
+        self.assertEqual(by_range["P8"], '=IF(F8="";"";F8/23)')
+        self.assertEqual(by_range["Q8"], '=IF(P8="";"";P8*13)')
+        self.assertEqual(by_range["L8"], '=IF(K8="";"";K8/23)')
+        self.assertEqual(by_range["M8"], '=IF(L8="";"";L8*13)')
         self.assertEqual(by_range["P12"], "=P3+P7+P11")
         self.assertEqual(by_range["Q12"], "=Q3+Q7+Q11")
         self.assertEqual(by_range["N12"], "=N3+N7+N11")
         self.assertEqual(by_range["N3"], 0)
-        control_cells = {"H26", "I26", "K26", "L26"}
         self.assertTrue(
             all(
-                key in control_cells or 12 <= ord(key[0]) - 64 <= 22
+                12 <= ord(key[0]) - 64 <= 22
                 for key in by_range
             )
         )
@@ -189,10 +192,29 @@ class WritebackPlanTests(unittest.TestCase):
 
         self.assertEqual(period.elapsed_days, 31)
         self.assertEqual(period.dem_elapsed_days, 23)
-        self.assertEqual(by_range["H26"], 31)
-        self.assertEqual(by_range["I26"], 23)
-        self.assertEqual(by_range["K26"], 31)
-        self.assertEqual(by_range["L26"], 23)
+        self.assertNotIn("H26", by_range)
+        self.assertNotIn("I26", by_range)
+        self.assertNotIn("K26", by_range)
+        self.assertNotIn("L26", by_range)
+        self.assertEqual(by_range["L2"], '=IF(K2="";"";K2/31)')
+        self.assertEqual(by_range["M2"], '=IF(L2="";"";L2*31)')
+
+    def test_dem_formulas_exclude_weekday_italian_holidays(self):
+        values = [[""] * 22 for _ in range(10)]
+        values[0][:6] = ["Funnel", "Canale", "Canale", "ID", "Campagna", "Investimento"]
+        values[1][:6] = ["Lead Veloce", "Dem", "DEM", "", "DEM test", 2100]
+        values[1][10] = 210
+        values[1][11:17] = ["old", "old", "", "", "old", "old"]
+
+        updates = build_estimate_updates(
+            values, Period(date(2026, 6, 1), date(2026, 6, 3))
+        )
+        by_range = {update.range: update.values[0][0] for update in updates}
+
+        self.assertEqual(by_range["L2"], '=IF(K2="";"";K2/21)')
+        self.assertEqual(by_range["M2"], '=IF(L2="";"";L2*2)')
+        self.assertEqual(by_range["P2"], '=IF(F2="";"";F2/21)')
+        self.assertEqual(by_range["Q2"], '=IF(P2="";"";P2*2)')
 
     def test_duplicate_sheet_id_aborts_before_writes(self):
         values = sheet_values()
@@ -227,8 +249,8 @@ class WritebackPlanTests(unittest.TestCase):
             frame, sheet_values(), [], date(2026, 7, 17)
         )
         by_range = {update.range: update.values[0][0] for update in updates}
-        self.assertEqual(by_range["P9"], '=IF(F9="";"";F9/I$26)')
-        self.assertEqual(by_range["Q9"], '=IF(P9="";"";P9*L$26)')
+        self.assertEqual(by_range["P9"], '=IF(F9="";"";F9/23)')
+        self.assertEqual(by_range["Q9"], '=IF(P9="";"";P9*13)')
 
     def test_adjacent_campaigns_use_independent_formulas(self):
         frame = pd.DataFrame(

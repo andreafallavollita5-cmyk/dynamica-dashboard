@@ -19,7 +19,7 @@ from src.crm_export_selector import select_crm_export
 from src.crm_excel_client import read_crm_export
 from src.crm_lead_matcher import match_crm_leads
 from src.combined_campaigns import apply_combined_campaign_metrics
-from src.dates import current_month_until_yesterday, weekdays_inclusive, weekdays_in_month
+from src.dates import current_month_until_yesterday, working_days_inclusive, working_days_in_month
 from src.dynamics_client import fetch_effective_leads
 from src.google_ads_client import fetch_google_campaign_delivery
 from src.google_sheets_client import (
@@ -165,11 +165,13 @@ def build_official_summaries(
                 subtotal[field] = _number(calculated.get(field))
 
         lead_target = subtotal.get("stima_lead")
+        lead_month_days = dem_days_in_month if slug == "dem" else days_in_month
+        lead_elapsed_days = dem_elapsed_days if slug == "dem" else elapsed_days
         subtotal["stima_lead_giornaliere"] = safe_divide(
-            lead_target, days_in_month
+            lead_target, lead_month_days
         )
         subtotal["stima_lead_progressiva"] = (
-            subtotal["stima_lead_giornaliere"] * elapsed_days
+            subtotal["stima_lead_giornaliere"] * lead_elapsed_days
             if subtotal["stima_lead_giornaliere"] is not None else None
         )
         spending_month_days = dem_days_in_month if slug == "dem" else days_in_month
@@ -392,8 +394,8 @@ def build_report_rows(
     report_date = report_date or date.today()
     days_in_month = calendar.monthrange(start_date.year, start_date.month)[1]
     elapsed_days = max((end_date - start_date).days + 1, 0)
-    dem_days_in_month = weekdays_in_month(start_date)
-    dem_elapsed_days = weekdays_inclusive(start_date, end_date)
+    dem_days_in_month = working_days_in_month(start_date)
+    dem_elapsed_days = working_days_inclusive(start_date, end_date)
     delivery = {"google": google_rows, "meta": meta_rows}
     statuses = {"google": google_status, "meta": meta_status}
     output: list[dict] = []
@@ -437,10 +439,12 @@ def build_report_rows(
                 if speso_effettivo is not None:
                     source_parts.append("manual:sheet_spend")
 
-        calculated_lead_giornaliere = safe_divide(stima_lead, days_in_month)
+        lead_days_in_month = dem_days_in_month if is_dem else days_in_month
+        lead_elapsed_days = dem_elapsed_days if is_dem else elapsed_days
+        calculated_lead_giornaliere = safe_divide(stima_lead, lead_days_in_month)
         stima_lead_giornaliere = calculated_lead_giornaliere
         calculated_lead_progressiva = (
-            stima_lead_giornaliere * elapsed_days
+            stima_lead_giornaliere * lead_elapsed_days
             if stima_lead_giornaliere is not None else None
         )
         stima_lead_progressiva = calculated_lead_progressiva
@@ -524,6 +528,8 @@ def build_report_rows(
             manual_rows=manual_rows,
             days_in_month=days_in_month,
             elapsed_days=elapsed_days,
+            dem_days_in_month=dem_days_in_month,
+            dem_elapsed_days=dem_elapsed_days,
             area_clienti_total=area_clienti_total,
         )
 
@@ -618,6 +624,8 @@ def _append_official_rows(
     manual_rows: list[dict] | None = None,
     days_in_month: int | None = None,
     elapsed_days: int | None = None,
+    dem_days_in_month: int | None = None,
+    dem_elapsed_days: int | None = None,
     area_clienti_total: float | None = None,
 ) -> list[dict]:
     output = list(campaign_rows)
@@ -631,12 +639,18 @@ def _append_official_rows(
                 value = _number(official.get(f"sheet_{slug}_{field}_subtotal"))
                 if value is not None:
                     summary[field] = value
-            if summary.get("stima_lead") is not None and days_in_month:
+            lead_month_days = (
+                dem_days_in_month if slug == "dem" else days_in_month
+            )
+            lead_elapsed = (
+                dem_elapsed_days if slug == "dem" else elapsed_days
+            )
+            if summary.get("stima_lead") is not None and lead_month_days:
                 summary["stima_lead_giornaliere"] = (
-                    summary["stima_lead"] / days_in_month
+                    summary["stima_lead"] / lead_month_days
                 )
                 summary["stima_lead_progressiva"] = (
-                    summary["stima_lead_giornaliere"] * (elapsed_days or 0)
+                    summary["stima_lead_giornaliere"] * (lead_elapsed or 0)
                 )
             if slug == "area_clienti" and manual_rows:
                 lead_target = _number(

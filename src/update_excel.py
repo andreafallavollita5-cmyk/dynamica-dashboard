@@ -22,7 +22,7 @@ from openpyxl.utils import get_column_letter
 
 from src.report_groups import CLIENT_GROUPS, SUMMARY_FIELDS, client_subtotal_group
 from src.combined_campaigns import COMBINED_CAMPAIGN_PAIRS
-from src.dates import weekdays_in_month
+from src.dates import working_days_in_month
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -591,7 +591,7 @@ def generate_client_excel(
         raise ValueError("Nessuna campagna disponibile per l'export.")
     metadata = _metadata(report_df, campaign_frame)
     days_in_month = metadata["days_in_month"]
-    dem_days_in_month = weekdays_in_month(metadata["start_date"].date())
+    dem_days_in_month = working_days_in_month(metadata["start_date"].date())
     funnel_groups = _client_subtotal_groups(campaign_frame)
     campaign_daily_values = campaign_frame.apply(
         lambda row: (

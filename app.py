@@ -1311,7 +1311,7 @@ def apply_daily_spend_filter(pd, report_df, daily_df, start_date, end_date):
     from calendar import monthrange
     import re
     from src.report_groups import client_subtotal_group
-    from src.dates import weekdays_inclusive, weekdays_in_month
+    from src.dates import working_days_inclusive, working_days_in_month
 
     if daily_df.empty:
         return report_df.copy()
@@ -1325,8 +1325,8 @@ def apply_daily_spend_filter(pd, report_df, daily_df, start_date, end_date):
     result = report_df.copy()
     selected_days = (end_date - start_date).days + 1
     days_in_month = monthrange(start_date.year, start_date.month)[1]
-    dem_selected_days = weekdays_inclusive(start_date, end_date)
-    dem_days_in_month = weekdays_in_month(start_date)
+    dem_selected_days = working_days_inclusive(start_date, end_date)
+    dem_days_in_month = working_days_in_month(start_date)
 
     def clean_id(value) -> str:
         if pd.isna(value):
@@ -1390,11 +1390,23 @@ def apply_daily_spend_filter(pd, report_df, daily_df, start_date, end_date):
                 dynamic_leads[index] = float(normal_counts.get(excel_row, 0))
         result["lead_effettive"] = pd.Series(dynamic_leads)
         if "stima_lead" in result:
+            is_dem_lead = result.apply(
+                lambda row: client_subtotal_group(row.to_dict()) == "dem", axis=1
+            )
             result["stima_lead_giornaliere"] = (
                 pd.to_numeric(result["stima_lead"], errors="coerce") / days_in_month
             )
+            result.loc[is_dem_lead, "stima_lead_giornaliere"] = (
+                pd.to_numeric(
+                    result.loc[is_dem_lead, "stima_lead"], errors="coerce"
+                ) / dem_days_in_month
+            )
             result["stima_lead_progressiva"] = (
                 result["stima_lead_giornaliere"] * selected_days
+            )
+            result.loc[is_dem_lead, "stima_lead_progressiva"] = (
+                result.loc[is_dem_lead, "stima_lead_giornaliere"]
+                * dem_selected_days
             )
         result["delta_lead"] = (
             pd.to_numeric(result["lead_effettive"], errors="coerce")
@@ -1529,6 +1541,7 @@ def build_period_report_frame(
     """Return campaign plus official summary rows for the selected dates."""
     from calendar import monthrange
     from src.build_report_data import _summary_row
+    from src.dates import working_days_inclusive, working_days_in_month
     from src.report_groups import CLIENT_GROUPS, client_subtotal_group
 
     report_start = pd.to_datetime(report_df["start_date"], errors="coerce").dt.date
@@ -1555,6 +1568,8 @@ def build_period_report_frame(
     dynamic["end_date"] = selected_end.isoformat()
     days = (selected_end - selected_start).days + 1
     days_in_month = monthrange(selected_start.year, selected_start.month)[1]
+    dem_days = working_days_inclusive(selected_start, selected_end)
+    dem_days_in_month = working_days_in_month(selected_start)
     official = (
         report_df[report_df["row_type"].isin(["subtotal", "total"])].copy()
         if "row_type" in report_df.columns else report_df.iloc[0:0].copy()
@@ -1607,9 +1622,11 @@ def build_period_report_frame(
                 summary["stima_lead"] = float(target.iloc[0])
         lead_target = summary.get("stima_lead")
         if lead_target is not None:
-            summary["stima_lead_giornaliere"] = lead_target / days_in_month
+            lead_month_days = dem_days_in_month if slug == "dem" else days_in_month
+            lead_elapsed_days = dem_days if slug == "dem" else days
+            summary["stima_lead_giornaliere"] = lead_target / lead_month_days
             summary["stima_lead_progressiva"] = (
-                summary["stima_lead_giornaliere"] * days
+                summary["stima_lead_giornaliere"] * lead_elapsed_days
             )
             summary["delta_lead"] = (
                 summary["lead_effettive"] - summary["stima_lead_progressiva"]

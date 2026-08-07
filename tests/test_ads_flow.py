@@ -220,7 +220,10 @@ class AdsReportFlowTests(unittest.TestCase):
         rows = build_report_rows(
             [manual], [], [], date(2026, 7, 1), date(2026, 7, 12)
         )
-        expected_leads = 657.8947368421053 / 31 * 12
+        expected_leads = 657.8947368421053 / 23 * 8
+        self.assertAlmostEqual(
+            rows[0]["stima_lead_giornaliere"], 657.8947368421053 / 23
+        )
         self.assertAlmostEqual(rows[0]["stima_lead_progressiva"], expected_leads)
         self.assertAlmostEqual(rows[0]["delta_lead"], 239 - expected_leads)
         self.assertAlmostEqual(rows[0]["stima_spending_progressiva"], 1739.1304347826087)

@@ -131,6 +131,33 @@ class SpendDailyTests(unittest.TestCase):
         )
         self.assertEqual(result.iloc[0]["stima_spending_progressiva"], 0.0)
 
+    def test_dem_lead_plan_uses_working_days_and_excludes_holidays(self):
+        report = report_rows().iloc[[0]].copy()
+        report.loc[:, "platform"] = "DEM"
+        report.loc[:, "channel"] = "DEM"
+        report.loc[:, "google_campaign_id"] = ""
+        report.loc[:, "stima_lead"] = 210.0
+        daily = pd.DataFrame(
+            [
+                {
+                    "date": date(2026, 6, 1),
+                    "source": "crm",
+                    "campaign_id": "",
+                    "campaign_name": "DEM",
+                    "excel_row": "2",
+                    "leads": 1,
+                    "spend": 0.0,
+                }
+            ]
+        )
+
+        result = apply_daily_spend_filter(
+            pd, report, daily, date(2026, 6, 1), date(2026, 6, 3)
+        )
+
+        self.assertEqual(result.iloc[0]["stima_lead_giornaliere"], 10.0)
+        self.assertEqual(result.iloc[0]["stima_lead_progressiva"], 20.0)
+
     def test_single_day(self):
         result = apply_daily_spend_filter(
             pd, report_rows(), daily_rows(), date(2026, 7, 2), date(2026, 7, 2)
@@ -413,6 +440,35 @@ class SpendDailyTests(unittest.TestCase):
         self.assertTrue(campaigns["lead_effettive"].isna().all())
         self.assertEqual(subtotal["lead_effettive"], 7)
         self.assertEqual(total["lead_effettive"], 7)
+
+    def test_dem_period_subtotal_uses_working_days_for_lead_plan(self):
+        report = report_rows().iloc[[0]].copy()
+        report["row_type"] = "campaign"
+        report.loc[:, "platform"] = "Dem"
+        report.loc[:, "channel"] = "DEM"
+        report.loc[:, "google_campaign_id"] = ""
+        report.loc[:, "stima_lead"] = 210.0
+        daily = pd.DataFrame(
+            [
+                {
+                    "date": date(2026, 6, 1),
+                    "source": "crm",
+                    "excel_row": "2",
+                    "campaign_id": "",
+                    "campaign_name": "DEM",
+                    "spend": pd.NA,
+                    "leads": 1,
+                }
+            ]
+        )
+
+        period = build_period_report_frame(
+            pd, report, daily, date(2026, 6, 1), date(2026, 6, 3)
+        )
+        subtotal = period[period["row_type"] == "subtotal"].iloc[0]
+
+        self.assertEqual(subtotal["stima_lead_giornaliere"], 10.0)
+        self.assertEqual(subtotal["stima_lead_progressiva"], 20.0)
 
     def test_downloaded_excel_matches_selected_period(self):
         metadata = {

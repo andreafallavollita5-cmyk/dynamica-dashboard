@@ -1,13 +1,13 @@
 """Update period controls and estimate formulas in ``manual_inputs``.
 
 This lightweight step is independent from ``report_data.csv`` so it can run
-before the report build.  It preserves the visual template and only replaces
-the four period controls plus existing estimate formulas.
+before the report build. It preserves the visual template and replaces only
+existing estimate formulas, embedding the resolved period lengths so campaign
+row changes cannot invalidate fixed control-cell references.
 """
 
 from __future__ import annotations
 
-import math
 import sys
 from datetime import date
 
@@ -31,7 +31,6 @@ from src.writeback_google_sheet import (
 
 
 TARGET_WORKSHEET = "manual_inputs"
-CONTROL_CELLS = {"H26", "I26", "K26", "L26"}
 ESTIMATE_COLUMNS = {12, 13, 16, 17}  # L, M, P, Q
 
 
@@ -88,23 +87,30 @@ def build_estimate_updates(
     ]
     total_row = total_candidates[-1] if total_candidates else None
 
-    updates = [
-        PlannedUpdate("H26", [[period.days_in_month]], "giorni mese"),
-        PlannedUpdate("I26", [[period.dem_days_in_month]], "giorni mese DEM"),
-        PlannedUpdate("K26", [[period.elapsed_days]], "giorni trascorsi"),
-        PlannedUpdate("L26", [[period.dem_elapsed_days]], "feriali DEM trascorsi"),
-    ]
+    updates: list[PlannedUpdate] = []
 
     for row_number in planning_rows:
         if row_number == total_row:
             continue
         row = rows[row_number - 1]
         dem = is_dem_campaign(_row_mapping(row))
-        spending_month_days = "I$26" if dem else "H$26"
-        spending_elapsed_days = "L$26" if dem else "K$26"
+        spending_month_days = (
+            period.dem_days_in_month if dem else period.days_in_month
+        )
+        spending_elapsed_days = (
+            period.dem_elapsed_days if dem else period.elapsed_days
+        )
+        lead_month_days = period.dem_days_in_month if dem else period.days_in_month
+        lead_elapsed_days = period.dem_elapsed_days if dem else period.elapsed_days
         formulas = {
-            12: f'=IF(K{row_number}="";"";K{row_number}/H$26)',
-            13: f'=IF(L{row_number}="";"";L{row_number}*K$26)',
+            12: (
+                f'=IF(K{row_number}="";"";'
+                f'K{row_number}/{lead_month_days})'
+            ),
+            13: (
+                f'=IF(L{row_number}="";"";'
+                f'L{row_number}*{lead_elapsed_days})'
+            ),
             16: f'=IF(F{row_number}="";"";F{row_number}/{spending_month_days})',
             17: (
                 f'=IF(P{row_number}="";"";'
@@ -130,7 +136,7 @@ def build_estimate_updates(
                 PlannedUpdate(f"Q{total_row}", [[f"={subtotal_refs}"]], "totale misto")
             )
 
-    allowed = CONTROL_CELLS | {
+    allowed = {
         _cell(row, column)
         for row in planning_rows
         for column in ESTIMATE_COLUMNS
@@ -176,14 +182,6 @@ def run_update(today: date | None = None) -> dict[str, object]:
                     f"Verifica fallita: modifica inattesa in {coordinate}."
                 )
 
-    controls = worksheet.get(
-        "H26:L26", value_render_option=ValueRenderOption.unformatted
-    )
-    control_row = _padded(controls, 1, 5)[0]
-    expected = (period.days_in_month, period.dem_days_in_month, period.elapsed_days, period.dem_elapsed_days)
-    actual = (control_row[0], control_row[1], control_row[3], control_row[4])
-    if any(not math.isclose(float(value), target) for value, target in zip(actual, expected)):
-        raise SheetWritebackError("Verifica finale dei controlli periodo fallita.")
     return {
         "start_date": start_date.isoformat(),
         "end_date": end_date.isoformat(),
