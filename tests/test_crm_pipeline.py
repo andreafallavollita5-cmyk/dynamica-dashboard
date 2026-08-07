@@ -104,6 +104,22 @@ class CRMMatchingTests(unittest.TestCase):
         self.assertEqual(allocations, {})
         self.assertEqual(audit[0]["match_status"], "ambiguous")
 
+    def test_missing_utm_on_split_campaign_uses_first_planning_row(self):
+        plans = [manual(6, "First"), manual(7, "Second")]
+        maps = [
+            mapping("First", "QUINTO DIGITALE [GOOGLE]", "base"),
+            mapping("Second", "QUINTO DIGITALE [GOOGLE]", "exact"),
+        ]
+
+        allocations, methods, audit = match_crm_leads(
+            [lead(1, "QUINTO DIGITALE [GOOGLE]")], plans, maps
+        )
+
+        self.assertEqual(allocations, {6: 1})
+        self.assertEqual(methods, {6: "crm_mapping"})
+        self.assertEqual(audit[0]["match_status"], "matched")
+        self.assertEqual(audit[0]["matched_excel_row"], 6)
+
 
 class OfficialReportRowsTests(unittest.TestCase):
     def test_area_subtotal_plan_is_preserved_in_official_rows(self):

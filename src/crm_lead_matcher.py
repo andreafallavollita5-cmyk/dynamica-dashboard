@@ -152,6 +152,15 @@ def match_crm_leads(
 
         status = "unmatched"
         matched_row: int | None = None
+        if (
+            len(candidates) > 1
+            and not utm
+            and all(candidate["utm_aliases"] for candidate in candidates)
+        ):
+            # When the CRM omits the UTM for campaign variants that are otherwise
+            # split by UTM, use the first planning row as the deterministic owner.
+            # This keeps the lead unique while preserving the explicit mapping order.
+            candidates = [min(candidates, key=lambda candidate: candidate["excel_row"])]
         if len(candidates) == 1:
             status = "matched"
             matched_row = candidates[0]["excel_row"]
