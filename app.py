@@ -1849,10 +1849,14 @@ def build_dashboard_table_frame(
     all_campaigns = all_frame[
         all_frame["row_type"].fillna("campaign") == "campaign"
     ].copy()
+    planned_campaigns = all_campaigns[
+        all_campaigns.get("excel_row").notna()
+        & all_campaigns.get("excel_row").astype(str).str.strip().ne("")
+    ].copy()
     dynamic_groups = campaigns.apply(
         lambda row: client_subtotal_group(row.to_dict()), axis=1
     )
-    all_groups = all_campaigns.apply(
+    planned_groups = planned_campaigns.apply(
         lambda row: client_subtotal_group(row.to_dict()), axis=1
     )
     output_rows: list[dict] = []
@@ -1876,7 +1880,9 @@ def build_dashboard_table_frame(
             campaign_row["_row_type"] = "campaign"
             output_rows.append(campaign_row)
 
-        complete = identities(group) == identities(all_campaigns[all_groups == slug])
+        complete = identities(group) == identities(
+            planned_campaigns[planned_groups == slug]
+        )
         official = all_frame[
             (all_frame.get("row_type", "") == "subtotal")
             & (all_frame["funnel"].astype(str) == f"TOT {label}")
@@ -1893,7 +1899,7 @@ def build_dashboard_table_frame(
         subtotal_row["_row_type"] = "subtotal"
         output_rows.append(subtotal_row)
 
-    complete_total = identities(campaigns) == identities(all_campaigns)
+    complete_total = identities(campaigns) == identities(planned_campaigns)
     official_total = all_frame[all_frame.get("row_type", "") == "total"]
     if complete_total and not official_total.empty:
         total_row = official_total.iloc[0].to_dict()

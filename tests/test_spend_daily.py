@@ -591,6 +591,28 @@ class SpendDailyTests(unittest.TestCase):
         self.assertEqual(subtotal["speso_effettivo"], 37)
         self.assertEqual(total["speso_effettivo"], 37)
 
+    def test_dashboard_uses_official_totals_when_only_unplanned_api_rows_are_omitted(self):
+        static = report_rows()
+        official = static.iloc[[0]].copy()
+        official.loc[:, "row_type"] = "total"
+        official.loc[:, "funnel"] = "TOTALE GENERALE"
+        official.loc[:, "campaign_name"] = "TOTALE GENERALE"
+        official.loc[:, "cpl_target"] = 20.04
+        unplanned = static.iloc[[0]].copy()
+        unplanned["excel_row"] = None
+        unplanned.loc[:, "funnel"] = "API Ads"
+        unplanned.loc[:, "campaign_name"] = "Campagna API non pianificata"
+        all_frame = pd.concat([static, unplanned, official], ignore_index=True)
+        table = build_dashboard_table_frame(
+            pd,
+            static,
+            static,
+            all_frame,
+            full_scope=False,
+        )
+        total = table[table["_row_type"] == "total"].iloc[0]
+        self.assertEqual(total["cpl_target"], 20.04)
+
 
 if __name__ == "__main__":
     unittest.main()

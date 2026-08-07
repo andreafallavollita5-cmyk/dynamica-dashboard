@@ -133,6 +133,41 @@ class OfficialReportRowsTests(unittest.TestCase):
         campaigns = [row for row in rows if row["row_type"] == "campaign"]
         self.assertTrue(all(row["lead_effettive"] is None for row in campaigns))
 
+    def test_official_cpp_and_practices_are_preserved_with_crm_rows(self):
+        plans = [
+            manual(2, "Area", "Area Clienti", stima_lead=None),
+            manual(8, "Lead", "Lead Veloce", stima_lead=100),
+        ]
+        plans[0].update(
+            {
+                "sheet_area_clienti_cpp_medio_subtotal": 418,
+                "sheet_area_clienti_stima_pratiche_subtotal": 44,
+                "sheet_lead_veloce_cpp_medio_subtotal": 850,
+                "sheet_lead_veloce_stima_pratiche_subtotal": 23.55,
+                "sheet_total_cpp_medio": 496.82,
+                "sheet_total_stima_pratiche": 67.55,
+            }
+        )
+        rows = build_report_rows(
+            plans,
+            [],
+            [],
+            date(2026, 8, 1),
+            date(2026, 8, 6),
+            crm_leads_by_excel_row={8: 0},
+            area_clienti_total=0,
+        )
+        subtotals = {
+            row["funnel"]: row for row in rows if row["row_type"] == "subtotal"
+        }
+        total = next(row for row in rows if row["row_type"] == "total")
+        self.assertEqual(subtotals["TOT Area Clienti"]["cpp_medio"], 418)
+        self.assertEqual(subtotals["TOT Area Clienti"]["stima_pratiche"], 44)
+        self.assertEqual(subtotals["TOT Lead Veloce"]["cpp_medio"], 850)
+        self.assertEqual(subtotals["TOT Lead Veloce"]["stima_pratiche"], 23.55)
+        self.assertEqual(total["cpp_medio"], 496.82)
+        self.assertEqual(total["stima_pratiche"], 67.55)
+
     def test_dem_spend_and_official_rows_are_not_repeated_on_campaigns(self):
         rows = build_report_rows(
             [

@@ -78,6 +78,15 @@ MANUAL_SUMMARY_FIELDS = (
     "stima_spending_progressiva",
 )
 
+OFFICIAL_PLAN_FIELDS = (
+    "investimento_media",
+    "percentuale_investimento",
+    "cpp_medio",
+    "stima_pratiche",
+    "cpl_target",
+    "stima_lead",
+)
+
 
 def _official_summary_values(
     official: dict,
@@ -613,17 +622,28 @@ def _append_official_rows(
 ) -> list[dict]:
     output = list(campaign_rows)
     summaries: list[dict] = []
+    official = manual_rows[0] if manual_rows else {}
     for slug, label in CLIENT_GROUPS:
         group = [row for row in campaign_rows if client_subtotal_group(row) == slug]
         if group:
             summary = _summary_row(group, f"TOT {label}", "subtotal")
+            for field in OFFICIAL_PLAN_FIELDS:
+                value = _number(official.get(f"sheet_{slug}_{field}_subtotal"))
+                if value is not None:
+                    summary[field] = value
+            if summary.get("stima_lead") is not None and days_in_month:
+                summary["stima_lead_giornaliere"] = (
+                    summary["stima_lead"] / days_in_month
+                )
+                summary["stima_lead_progressiva"] = (
+                    summary["stima_lead_giornaliere"] * (elapsed_days or 0)
+                )
             if slug == "area_clienti" and manual_rows:
-                first = manual_rows[0]
                 lead_target = _number(
-                    first.get("sheet_area_clienti_stima_lead_subtotal")
+                    official.get("sheet_area_clienti_stima_lead_subtotal")
                 )
                 cpl_target = _number(
-                    first.get("sheet_area_clienti_cpl_target_subtotal")
+                    official.get("sheet_area_clienti_cpl_target_subtotal")
                 )
                 if lead_target is not None:
                     summary["stima_lead"] = lead_target
@@ -660,6 +680,10 @@ def _append_official_rows(
             summaries.append(summary)
             output.append(summary)
     total = _summary_row(campaign_rows, "TOTALE GENERALE", "total")
+    for field in OFFICIAL_PLAN_FIELDS:
+        value = _number(official.get(f"sheet_total_{field}"))
+        if value is not None:
+            total[field] = value
     for field in (
         "stima_lead", "stima_lead_giornaliere", "stima_lead_progressiva"
     ):
