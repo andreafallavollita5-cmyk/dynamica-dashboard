@@ -1306,12 +1306,27 @@ def normalize_period(selected_period, fallback_start, fallback_end):
     return start, end
 
 
+def load_working_day_functions():
+    """Load DEM calendar helpers, refreshing a stale Streamlit module if needed."""
+    import importlib
+    import src.dates as dates_module
+
+    required = ("working_days_inclusive", "working_days_in_month")
+    if not all(hasattr(dates_module, name) for name in required):
+        dates_module = importlib.reload(dates_module)
+    return (
+        dates_module.working_days_inclusive,
+        dates_module.working_days_in_month,
+    )
+
+
 def apply_daily_spend_filter(pd, report_df, daily_df, start_date, end_date):
     """Apply daily Ads spend and CRM lead aggregates to the selected interval."""
     from calendar import monthrange
     import re
     from src.report_groups import client_subtotal_group
-    from src.dates import working_days_inclusive, working_days_in_month
+
+    working_days_inclusive, working_days_in_month = load_working_day_functions()
 
     if daily_df.empty:
         return report_df.copy()
@@ -1541,8 +1556,9 @@ def build_period_report_frame(
     """Return campaign plus official summary rows for the selected dates."""
     from calendar import monthrange
     from src.build_report_data import _summary_row
-    from src.dates import working_days_inclusive, working_days_in_month
     from src.report_groups import CLIENT_GROUPS, client_subtotal_group
+
+    working_days_inclusive, working_days_in_month = load_working_day_functions()
 
     report_start = pd.to_datetime(report_df["start_date"], errors="coerce").dt.date
     report_end = pd.to_datetime(report_df["end_date"], errors="coerce").dt.date
