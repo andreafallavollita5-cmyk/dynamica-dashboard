@@ -2226,7 +2226,12 @@ def main() -> None:
     top_left, top_right = st.columns([1, 1.08], gap="large")
     all_projects_label = "Tutti i progetti"
     all_projects_without_dem_label = "Tutti i progetti escluso DEM"
-    project_options = [all_projects_label, all_projects_without_dem_label] + sorted(
+    area_clienti_total_label = "Totale Area Clienti"
+    project_options = [
+        all_projects_label,
+        all_projects_without_dem_label,
+        area_clienti_total_label,
+    ] + sorted(
         str(value) for value in campaign_df["campaign_name"].dropna().unique()
     )
     with top_left:
@@ -2273,6 +2278,9 @@ def main() -> None:
     if selected_project == all_projects_without_dem_label:
         channel_values = filtered["channel"].fillna("").astype(str).str.strip()
         filtered = filtered[~channel_values.str.casefold().eq("dem")]
+    elif selected_project == area_clienti_total_label:
+        funnel_values = filtered["funnel"].fillna("").astype(str).str.strip()
+        filtered = filtered[funnel_values.str.casefold().eq("area clienti")]
     elif selected_project != all_projects_label:
         filtered = filtered[filtered["campaign_name"].astype(str) == selected_project]
     if apply_period:
@@ -2303,6 +2311,16 @@ def main() -> None:
     period_df = build_period_report_frame(
         pd, df, daily_spend, selected_start, selected_end
     )
+    export_df = (
+        period_df
+        if full_scope
+        else build_period_report_frame(
+            pd, filtered, daily_spend, selected_start, selected_end
+        )
+    )
+    export_metadata = dict(metadata)
+    export_metadata["start_date"] = selected_start.isoformat()
+    export_metadata["end_date"] = selected_end.isoformat()
     lead_metrics = calculate_dashboard_metrics(
         df if full_scope else dynamic_filtered, use_official_totals=full_scope
     )
@@ -2591,9 +2609,9 @@ def main() -> None:
         try:
             excel_bytes, excel_filename = build_excel_download(
                 pd,
-                df,
+                export_df,
                 daily_spend,
-                metadata,
+                export_metadata,
                 selected_start,
                 selected_end,
             )
@@ -2605,7 +2623,7 @@ def main() -> None:
                 width="stretch",
             )
             csv_bytes, csv_filename = build_csv_download(
-                period_df, selected_start, selected_end
+                export_df, selected_start, selected_end
             )
             st.download_button(
                 "Scarica CSV dati",
