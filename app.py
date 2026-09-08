@@ -2224,7 +2224,9 @@ def main() -> None:
         st.error("L'ultimo aggiornamento non è stato completato. Sono mostrati gli ultimi dati disponibili.")
 
     top_left, top_right = st.columns([1, 1.08], gap="large")
-    project_options = ["Tutti i progetti"] + sorted(
+    all_projects_label = "Tutti i progetti"
+    all_projects_without_dem_label = "Tutti i progetti escluso DEM"
+    project_options = [all_projects_label, all_projects_without_dem_label] + sorted(
         str(value) for value in campaign_df["campaign_name"].dropna().unique()
     )
     with top_left:
@@ -2268,7 +2270,10 @@ def main() -> None:
                     "Applica periodo", width="stretch"
                 )
 
-    if selected_project != "Tutti i progetti":
+    if selected_project == all_projects_without_dem_label:
+        channel_values = filtered["channel"].fillna("").astype(str).str.strip()
+        filtered = filtered[~channel_values.str.casefold().eq("dem")]
+    elif selected_project != all_projects_label:
         filtered = filtered[filtered["campaign_name"].astype(str) == selected_project]
     if apply_period:
         try:
@@ -2286,7 +2291,7 @@ def main() -> None:
     selected_end = st.session_state["applied_end_date"]
 
     full_scope = (
-        selected_project == "Tutti i progetti"
+        selected_project == all_projects_label
         and len(filtered.index) == len(campaign_df.index)
         and selected_start == pd.to_datetime(metadata["start_date"]).date()
         and selected_end == pd.to_datetime(metadata["end_date"]).date()
@@ -2462,7 +2467,7 @@ def main() -> None:
         st.markdown(
             f"""
             <div class="panel">
-              <div class="panel-title">Indice efficienza CPL</div>
+              <div class="panel-title">Efficienza campagna</div>
               <div class="cpl-gauge" style="--eff-color:{efficiency_color}">
                 <svg viewBox="0 0 220 125" aria-hidden="true">
                   <path class="cpl-arc" stroke="#f20d18" d="M20 105 A90 90 0 0 1 65 27.1"/>
