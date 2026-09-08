@@ -2311,21 +2311,52 @@ def main() -> None:
     period_df = build_period_report_frame(
         pd, df, daily_spend, selected_start, selected_end
     )
-    export_df = (
-        period_df
-        if full_scope
-        else build_period_report_frame(
-            pd, filtered, daily_spend, selected_start, selected_end
+    area_total_selected = selected_project == area_clienti_total_label
+    area_total_rows = period_df.iloc[0:0].copy()
+    if area_total_selected:
+        period_row_types = period_df["row_type"].fillna("campaign")
+        period_funnels = period_df["funnel"].fillna("").astype(str).str.strip()
+        area_campaign_mask = (
+            period_row_types.eq("campaign")
+            & period_funnels.str.casefold().eq("area clienti")
         )
-    )
+        area_total_mask = (
+            period_row_types.eq("subtotal")
+            & period_funnels.str.casefold().eq("tot area clienti")
+        )
+        area_total_rows = period_df[area_total_mask].copy()
+        export_df = period_df[area_campaign_mask | area_total_mask].copy()
+    else:
+        export_df = (
+            period_df
+            if full_scope
+            else build_period_report_frame(
+                pd, filtered, daily_spend, selected_start, selected_end
+            )
+        )
     export_metadata = dict(metadata)
     export_metadata["start_date"] = selected_start.isoformat()
     export_metadata["end_date"] = selected_end.isoformat()
+    excel_export_df = export_df
+    if area_total_selected and not area_total_rows.empty:
+        excel_total_row = area_total_rows.iloc[[0]].copy()
+        excel_total_row["row_type"] = "total"
+        excel_total_row["funnel"] = "TOTALE GENERALE"
+        excel_total_row["campaign_name"] = "TOTALE GENERALE"
+        excel_export_df = pd.concat(
+            [export_df, excel_total_row], ignore_index=True, sort=False
+        )
+    metrics_frame = df if full_scope else dynamic_filtered
+    use_official_metrics = full_scope
+    if area_total_selected and not area_total_rows.empty:
+        metrics_frame = area_total_rows.copy()
+        metrics_frame["row_type"] = "total"
+        use_official_metrics = True
     lead_metrics = calculate_dashboard_metrics(
-        df if full_scope else dynamic_filtered, use_official_totals=full_scope
+        metrics_frame, use_official_totals=use_official_metrics
     )
     spend_metrics = calculate_dashboard_metrics(
-        df if full_scope else dynamic_filtered, use_official_totals=full_scope
+        metrics_frame, use_official_totals=use_official_metrics
     )
     metrics = lead_metrics.copy()
     for key in ("spend_total", "planned_spend", "delta_spend", "delivery_ratio"):
@@ -2511,6 +2542,8 @@ def main() -> None:
         period_df,
         full_scope=full_scope,
     )
+    if area_total_selected:
+        table_frame = table_frame[table_frame["_row_type"] != "total"].copy()
     table_excel_rows = (
         table_frame["excel_row"].copy()
         if "excel_row" in table_frame
@@ -2609,7 +2642,7 @@ def main() -> None:
         try:
             excel_bytes, excel_filename = build_excel_download(
                 pd,
-                export_df,
+                excel_export_df,
                 daily_spend,
                 export_metadata,
                 selected_start,
