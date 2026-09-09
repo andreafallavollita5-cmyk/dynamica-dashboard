@@ -897,6 +897,7 @@ def apply_style(st) -> None:
         }
         .campaign-table tr:has(.subtotal-row-marker) .delta-value,
         .campaign-table tr:has(.total-row-marker) .delta-value { color:inherit !important; }
+        .campaign-table td.col-delta-speso .delta-value { color:var(--blue) !important; }
         .campaign-table th.col-campagna,
         .campaign-table td.col-campagna {
           border-right:2px solid var(--table-section-border) !important;
@@ -928,7 +929,7 @@ def apply_style(st) -> None:
         .kpi-note.primary { color:var(--accent); font-weight:700; }
         .kpi-note.secondary { color:var(--blue); font-weight:700; }
         .kpi-card.delta .kpi-notes { justify-content:flex-start; text-align:center; }
-        .kpi-card.delta .kpi-note { justify-content:center; color:var(--orange); }
+        .kpi-card.delta .kpi-note { justify-content:center; color:var(--blue); }
         @container (max-width: 280px) {
           .kpi-value { font-size:23px; line-height:25px; }
           .kpi-note { font-size:10px; line-height:14px; gap:4px; }
@@ -2392,17 +2393,6 @@ def main() -> None:
         cpl_delta_text = money(abs(cpl_delta)).replace(" EUR", " €")
         cpl_note = f"{'+' if cpl_delta >= 0 else '-'}{cpl_delta_text} vs CPL target"
 
-    delta_spend_color = (
-        "#08a642"
-        if delta_spend is not None and not pd.isna(delta_spend) and delta_spend < 0
-        else "#ff9d00"
-    )
-    cpl_card_color = (
-        "#08a642"
-        if cpl_delta is not None and not pd.isna(cpl_delta) and cpl_delta < 0
-        else "#ff9d00"
-    )
-
     kpi_cols = st.columns([.93, .95, 1.0, 1.03], gap="medium")
     with kpi_cols[0]:
         render_kpi_card(
@@ -2412,17 +2402,17 @@ def main() -> None:
     with kpi_cols[1]:
         render_kpi_card(
             st, "Delta speso", money(delta_spend).replace(" EUR", " €"),
-            "vs spending pianificato", "", delta_spend_color
+            "vs spending pianificato", "", "#00a5b4"
         )
     with kpi_cols[2]:
         render_kpi_card(
             st, "Lead effettive", integer(lead_total) if lead_available else "—", lead_note,
-            "", "#18c77a", "check-circle", None
+            "", "#00a5b4", "check-circle", None
         )
     with kpi_cols[3]:
         render_kpi_card(
             st, "CPL medio", money(cpl_avg).replace(" EUR", " €") if cpl_avg is not None else "—", cpl_note,
-            f"CPL target medio: {money(cpl_target_avg).replace(' EUR', ' €')}", cpl_card_color, "trend-up", "target"
+            f"CPL target medio: {money(cpl_target_avg).replace(' EUR', ' €')}", "#00a5b4", "trend-up", "target"
         )
 
     delivery_width = min(max(delivery_ratio or 0, 0), 1.2) / 1.2 * 100
