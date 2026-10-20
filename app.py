@@ -1765,6 +1765,14 @@ def _dashboard_numeric_series(pd, frame, column: str):
 
 def _dashboard_aggregate_summary(pd, static_frame, dynamic_frame) -> dict:
     """Aggregate only the rows currently represented by dashboard filters."""
+    from src.report_groups import is_excluded_from_kpis
+
+    static_frame = static_frame[
+        ~static_frame.apply(lambda row: is_excluded_from_kpis(row.to_dict()), axis=1)
+    ]
+    dynamic_frame = dynamic_frame[
+        ~dynamic_frame.apply(lambda row: is_excluded_from_kpis(row.to_dict()), axis=1)
+    ]
     def total(frame, column: str):
         values = _dashboard_numeric_series(pd, frame, column)
         return None if values.empty else float(values.sum())
@@ -2035,6 +2043,11 @@ def calculate_dashboard_metrics(df, use_official_totals: bool = False) -> dict:
         if "row_type" not in df.columns
         else df[df["row_type"].fillna("campaign") == "campaign"]
     )
+    from src.report_groups import is_excluded_from_kpis
+
+    campaigns = campaigns[
+        ~campaigns.apply(lambda row: is_excluded_from_kpis(row.to_dict()), axis=1)
+    ]
     source = campaigns
     legacy_official = use_official_totals and "row_type" not in df.columns
     if use_official_totals and "row_type" in df.columns:

@@ -12,6 +12,8 @@ CLIENT_GROUPS = (
     ("dem", "DEM"),
 )
 
+PROVISIONAL_EXCLUDED_CAMPAIGN = "PRESTITI PENSIONATI [GOOGLE ADS] — PROVVISORIA"
+
 SUMMARY_FIELDS = (
     "investimento_media",
     "percentuale_investimento",
@@ -42,6 +44,17 @@ def is_dem_campaign(row: Mapping[str, object]) -> bool:
         DEM_REFERENCE.search(str(row.get(field) or "")) is not None
         for field in ("funnel", "platform", "channel", "campaign_name")
     )
+
+
+def is_excluded_from_kpis(row: Mapping[str, object]) -> bool:
+    """Return whether a visible campaign row must stay outside KPI totals."""
+    explicit = str(row.get("exclude_from_kpi") or "").strip().casefold()
+    if explicit in {"true", "1", "yes", "si", "sì"}:
+        return True
+    if explicit in {"false", "0", "no"}:
+        return False
+    campaign_name = str(row.get("campaign_name") or "").strip().casefold()
+    return campaign_name == PROVISIONAL_EXCLUDED_CAMPAIGN.casefold()
 
 
 def client_subtotal_group(row: Mapping[str, object]) -> str:
