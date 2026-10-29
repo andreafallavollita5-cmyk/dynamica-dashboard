@@ -1,8 +1,8 @@
 {
   "client": "Dynamica Retail",
   "start_date": "2026-10-01",
-  "end_date": "2026-10-27",
-  "updated_at": "2026-10-28T09:30:28+01:00",
+  "end_date": "2026-10-28",
+  "updated_at": "2026-10-29T09:30:31+01:00",
   "status": "partial",
   "sources": {
     "google_ads": "ok",
@@ -13,6 +13,6 @@
   },
   "crm_source": "excel",
   "crm_file": "LEAD_QUESTO_MESE_PULITE.xlsx",
-  "crm_email_received_at": "2026-10-28T02:00:51+00:00",
+  "crm_email_received_at": "2026-10-29T02:01:02+00:00",
   "error": "Microsoft Ads non aggiornato."
 }
