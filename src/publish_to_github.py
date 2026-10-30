@@ -30,6 +30,32 @@ def _git(*args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
     )
 
 
+def _accessible_history_files(history_root: Path) -> list[Path]:
+    """Return publishable monthly files, skipping unreadable legacy folders."""
+    try:
+        candidates = list(history_root.iterdir())
+    except OSError:
+        return []
+
+    published: list[Path] = []
+    for folder in sorted(candidates, key=lambda path: path.name):
+        try:
+            if not folder.is_dir():
+                continue
+            datetime.strptime(folder.name, "%Y-%m")
+        except (OSError, ValueError):
+            continue
+        for name in HISTORY_FILES:
+            path = folder / name
+            try:
+                if path.is_file():
+                    published.append(path)
+            except OSError:
+                # A protected historical snapshot must not block today's latest.
+                continue
+    return published
+
+
 def publish_latest_files(commit_message: str | None = None) -> bool:
     """Commit and push latest files plus frozen monthly dashboard history.
 
@@ -45,16 +71,10 @@ def publish_latest_files(commit_message: str | None = None) -> bool:
     published_paths = list(LATEST_FILES)
     history_root = ROOT / HISTORY_ROOT
     if history_root.exists():
-        for folder in sorted(path for path in history_root.iterdir() if path.is_dir()):
-            try:
-                datetime.strptime(folder.name, "%Y-%m")
-            except ValueError:
-                continue
-            published_paths.extend(
-                path.relative_to(ROOT).as_posix()
-                for name in HISTORY_FILES
-                if (path := folder / name).is_file()
-            )
+        published_paths.extend(
+            path.relative_to(ROOT).as_posix()
+            for path in _accessible_history_files(history_root)
+        )
 
     _git("add", "--", *published_paths)
     changed = _git(
