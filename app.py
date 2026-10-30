@@ -856,8 +856,18 @@ def apply_style(st) -> None:
         .campaign-table td { font-weight:500; }
         .campaign-table tbody tr:not(:has(.subtotal-row-marker)):not(:has(.total-row-marker)):nth-child(even) td { background:var(--table-stripe); }
         .campaign-table tbody tr:not(:has(.subtotal-row-marker)):not(:has(.total-row-marker)):hover td { background:var(--table-hover); }
-        .campaign-table th.col-funnel,.campaign-table td.col-funnel { width:120px; text-align:left; }
-        .campaign-table th.col-canale,.campaign-table td.col-canale { width:90px; }
+        .campaign-table th.col-funnel,.campaign-table td.col-funnel {
+          width:100px;
+          text-align:left;
+          white-space:normal;
+          overflow:visible;
+          text-overflow:clip;
+          line-height:14px;
+        }
+        .campaign-table th.col-canale,.campaign-table td.col-canale {
+          width:110px;
+          white-space:nowrap;
+        }
         .campaign-table th.col-campagna,.campaign-table td.col-campagna { width:300px; text-align:left; }
         .campaign-table th.col-funnel,.campaign-table td.col-funnel,
         .campaign-table th.col-canale,.campaign-table td.col-canale,
@@ -867,7 +877,7 @@ def apply_style(st) -> None:
           background:var(--card-bg);
         }
         .campaign-table th.col-funnel,.campaign-table td.col-funnel { left:0; }
-        .campaign-table th.col-canale,.campaign-table td.col-canale { left:120px; }
+        .campaign-table th.col-canale,.campaign-table td.col-canale { left:100px; }
         .campaign-table th.col-campagna,.campaign-table td.col-campagna {
           left:210px;
           box-shadow:8px 0 12px -12px rgba(33,33,33,.75);
