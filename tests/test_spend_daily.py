@@ -11,6 +11,7 @@ from openpyxl import load_workbook
 
 from app import (
     add_unmapped_daily_campaigns,
+    apply_display_channel_labels,
     apply_daily_spend_filter,
     build_dashboard_table_frame,
     build_csv_download,
@@ -81,6 +82,25 @@ def daily_rows() -> pd.DataFrame:
 
 
 class SpendDailyTests(unittest.TestCase):
+    def test_client_facing_channel_labels_follow_platform_rules(self):
+        rows = pd.DataFrame(
+            [
+                {"platform": "Google", "channel": "Display", "campaign_name": "Search campaign"},
+                {"platform": "Google", "channel": "Search", "campaign_name": "Leads-PMax"},
+                {"platform": "Meta", "channel": "Display", "campaign_name": "Meta campaign"},
+                {"platform": "Microsoft", "channel": "Search", "campaign_name": "DYN_VELOCE Cessione del Quinto"},
+                {"platform": "Dem", "channel": "DEM", "campaign_name": "DEM campaign"},
+                {"platform": float("nan"), "channel": float("nan"), "campaign_name": float("nan")},
+            ]
+        )
+
+        labelled = apply_display_channel_labels(rows)
+
+        self.assertEqual(
+            labelled["channel"].tolist(),
+            ["Google Search", "Google Display", "Meta", "Microsoft Search", "DEM", ""],
+        )
+
     def test_scheduler_updates_daily_history_before_report(self):
         source = Path("run_daily_update.bat").read_text(encoding="utf-8")
         daily_position = source.index("-m src.build_spend_daily")
@@ -512,6 +532,14 @@ class SpendDailyTests(unittest.TestCase):
             }
             self.assertEqual(set(campaign_rows), {"Campagna Google", "Campagna Meta"})
             self.assertEqual(
+                report.cell(campaign_rows["Campagna Google"], 3).value,
+                "Google Search",
+            )
+            self.assertEqual(
+                report.cell(campaign_rows["Campagna Meta"], 3).value,
+                "Meta",
+            )
+            self.assertEqual(
                 report.cell(campaign_rows["Campagna Google"], 18).value, 20
             )
             total_row = next(
@@ -535,6 +563,7 @@ class SpendDailyTests(unittest.TestCase):
         self.assertEqual(exported["start_date"].unique().tolist(), ["2026-07-02"])
         self.assertEqual(exported["end_date"].unique().tolist(), ["2026-07-02"])
         self.assertEqual(exported["speso_effettivo"].tolist(), [20.0, 7.0])
+        self.assertEqual(exported["channel"].tolist(), ["Google Search", "Meta"])
 
     def test_non_default_period_requires_daily_data(self):
         metadata = {"start_date": "2026-07-01", "end_date": "2026-07-03"}

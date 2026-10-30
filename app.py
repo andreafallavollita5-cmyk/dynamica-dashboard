@@ -76,6 +76,44 @@ def svg_icon(name: str, class_name: str = "") -> str:
     return SVG_ICONS[name].replace("<svg ", f'<svg class="svg-icon {class_name}" ')
 
 
+def display_channel_label(platform, campaign_name, current_channel="") -> str:
+    """Return the client-facing channel label without changing source data."""
+    def clean(value) -> str:
+        if value is None or value != value:
+            return ""
+        return str(value).strip()
+
+    platform_key = clean(platform).casefold()
+    campaign_key = "".join(
+        character
+        for character in clean(campaign_name).casefold()
+        if character.isalnum()
+    )
+    if platform_key == "google":
+        if "pmax" in campaign_key or "performancemax" in campaign_key:
+            return "Google Display"
+        return "Google Search"
+    if platform_key == "meta":
+        return "Meta"
+    if platform_key == "microsoft":
+        return "Microsoft Search"
+    return clean(current_channel)
+
+
+def apply_display_channel_labels(frame):
+    """Apply client-facing channel labels to a dashboard/export copy."""
+    result = frame.copy()
+    if "channel" not in result.columns or result.empty:
+        return result
+    result["channel"] = result.apply(
+        lambda row: display_channel_label(
+            row.get("platform"), row.get("campaign_name"), row.get("channel")
+        ),
+        axis=1,
+    )
+    return result
+
+
 def load_last_update(path: Path | None = None) -> dict:
     """Load latest update metadata without exposing technical details."""
     path = path or LAST_UPDATE_PATH
@@ -1746,6 +1784,7 @@ def build_excel_download(
     export_df = prepare_excel_export_frame(
         pd, report_df, daily_df, metadata, selected_start, selected_end
     )
+    export_df = apply_display_channel_labels(export_df)
     with TemporaryDirectory(prefix="dynamica_excel_") as output_dir:
         generated_path = Path(
             generate_client_excel(export_df, output_dir=output_dir)
@@ -2029,6 +2068,7 @@ def build_csv_download(
 ) -> tuple[bytes, str]:
     """Serialize the currently filtered report snapshot for the selected period."""
     export_df = report_df.copy()
+    export_df = apply_display_channel_labels(export_df)
     export_df["start_date"] = selected_start.isoformat()
     export_df["end_date"] = selected_end.isoformat()
     content = export_df.to_csv(index=False, encoding="utf-8-sig").encode("utf-8-sig")
@@ -2547,6 +2587,7 @@ def main() -> None:
     )
     if area_total_selected:
         table_frame = table_frame[table_frame["_row_type"] != "total"].copy()
+    table_frame = apply_display_channel_labels(table_frame)
     table_excel_rows = (
         table_frame["excel_row"].copy()
         if "excel_row" in table_frame
