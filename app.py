@@ -2650,9 +2650,11 @@ def main() -> None:
         ]
 
     if "Canale" in display_df:
-        display_df["Canale"] = display_df["Canale"].fillna("").map(
-            lambda value: html.escape(str(value))
-        )
+        def format_channel(value) -> str:
+            channel = html.escape(str(value or "").strip(), quote=True)
+            return f'<span title="{channel}">{channel}</span>' if channel else ""
+
+        display_df["Canale"] = display_df["Canale"].fillna("").map(format_channel)
 
     if "Campagna" in display_df:
         display_df["Campagna"] = display_df["Campagna"].fillna("")
