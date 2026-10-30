@@ -599,12 +599,12 @@
 2026-10-28,google_ads,2,2,23993507424,DYN_AREACL CQ e CQP | Calcola Preventivo - QUINTO DIGITALE,112.575373,,,
 2026-10-28,google_ads,3,3,23998450448,DYN_AREACL Delega di Pagamento - QUINTO DIGITALE,15.28,,,
 2026-10-28,google_ads,8,8,23990314506,DYN_VELOCE Cessione del Quinto AIMAX,452.323442,,,
-2026-10-28,meta_ads,12,12,6944411197975,DYN_VELOCE New Creative Apr26,301.33,,,
-2026-10-28,meta_ads,13,13,52553120790579,DYN_VELOCE LeadGen CQD PEN [Ecuador],8.27,,,
-2026-10-28,meta_ads,14,14,6634088776775,DYN_VELOCE LeadGen CQD PEN [Tunisia],16.48,,,
+2026-10-28,meta_ads,12,12,6944411197975,DYN_VELOCE New Creative Apr26,303.46,,,
+2026-10-28,meta_ads,13,13,52553120790579,DYN_VELOCE LeadGen CQD PEN [Ecuador],8.28,,,
+2026-10-28,meta_ads,14,14,6634088776775,DYN_VELOCE LeadGen CQD PEN [Tunisia],16.53,,,
 2026-10-28,meta_ads,15,15,6901683340975,DYN_PUL NEW Meta,11.65,,,
-2026-10-28,meta_ads,16,16,52533122877779,DYN_WA_Landing_WatsApp,32.84,,,
-2026-10-28,meta_ads,4,4,6905931065575,DYN_AREACL 2.0 - PURCHASE,182.52,,,
+2026-10-28,meta_ads,16,16,52533122877779,DYN_WA_Landing_WatsApp,32.85,,,
+2026-10-28,meta_ads,4,4,6905931065575,DYN_AREACL 2.0 - PURCHASE,183.0,,,
 2026-10-28,crm,12,,,DYN_VELOCE New Creative Apr26,,23,,crm_mapping
 2026-10-28,crm,14,,,[BMK 2025] LeadGen CQD PEN [Tunisia],,1,,crm_mapping
 2026-10-28,crm,15,,,DYN_PUL NEW Meta,,2,,crm_mapping
@@ -615,3 +615,24 @@
 2026-10-28,crm,7,,,PRESTITI PENSIONATI [GOOGLE ADS] — PROVVISORIA,,3,,crm_mapping
 2026-10-28,crm,8,,,DYN_VELOCE Cessione del Quinto AIMAX,,10,,crm_mapping
 2026-10-28,crm_area_clienti,,,,AREA CLIENTI,,8,,area_clienti_total
+2026-10-29,google_ads,,,24398369465,DYN_PUL NEW Prestiti Pensionati QUINTO DIGITALE,63.627571,,,
+2026-10-29,google_ads,10,10,23993437149,DYN_VELOCE CQ Pensionati ESTERO - Paesi Prioritari QUINTO DIGITALE,12.25,,,
+2026-10-29,google_ads,11,11,21905808840,DYN_PUL Leads-Pmax,12.220746,,,
+2026-10-29,google_ads,2,2,23993507424,DYN_AREACL CQ e CQP | Calcola Preventivo - QUINTO DIGITALE,54.743492,,,
+2026-10-29,google_ads,3,3,23998450448,DYN_AREACL Delega di Pagamento - QUINTO DIGITALE,14.853651,,,
+2026-10-29,google_ads,8,8,23990314506,DYN_VELOCE Cessione del Quinto AIMAX,321.594598,,,
+2026-10-29,meta_ads,12,12,6944411197975,DYN_VELOCE New Creative Apr26,284.18,,,
+2026-10-29,meta_ads,13,13,52553120790579,DYN_VELOCE LeadGen CQD PEN [Ecuador],10.51,,,
+2026-10-29,meta_ads,14,14,6634088776775,DYN_VELOCE LeadGen CQD PEN [Tunisia],9.45,,,
+2026-10-29,meta_ads,15,15,6901683340975,DYN_PUL NEW Meta,10.81,,,
+2026-10-29,meta_ads,16,16,52533122877779,DYN_WA_Landing_WatsApp,29.03,,,
+2026-10-29,meta_ads,4,4,6905931065575,DYN_AREACL 2.0 - PURCHASE,181.65,,,
+2026-10-29,crm,12,,,DYN_VELOCE New Creative Apr26,,26,,crm_mapping
+2026-10-29,crm,15,,,DYN_PUL NEW Meta,,1,,crm_mapping
+2026-10-29,crm,16,,,DYN_Landing_Whatsapp,,2,,crm_mapping
+2026-10-29,crm,18,,,DEM DYNAMICS ADVICE ME,,13,,crm_mapping
+2026-10-29,crm,19,,,DEM DIGITOO,,2,,crm_mapping
+2026-10-29,crm,20,,,DEM TIG,,102,,crm_mapping
+2026-10-29,crm,7,,,PRESTITI PENSIONATI [GOOGLE ADS] — PROVVISORIA,,1,,crm_mapping
+2026-10-29,crm,8,,,DYN_VELOCE Cessione del Quinto AIMAX,,7,,crm_mapping
+2026-10-29,crm_area_clienti,,,,AREA CLIENTI,,11,,area_clienti_total
