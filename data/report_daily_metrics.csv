@@ -645,12 +645,12 @@
 2026-10-30,google_ads,3,3,23998450448,DYN_AREACL Delega di Pagamento - QUINTO DIGITALE,18.15,,,
 2026-10-30,google_ads,7,7,24398369465,DYN_PUL NEW Prestiti Pensionati QUINTO DIGITALE,21.369103,,,
 2026-10-30,google_ads,8,8,23990314506,DYN_VELOCE Cessione del Quinto AIMAX,306.328503,,,
-2026-10-30,meta_ads,12,12,6944411197975,DYN_VELOCE New Creative Apr26,262.68,,,
-2026-10-30,meta_ads,13,13,52553120790579,DYN_VELOCE LeadGen CQD PEN [Ecuador],8.71,,,
-2026-10-30,meta_ads,14,14,6634088776775,DYN_VELOCE LeadGen CQD PEN [Tunisia],7.5,,,
-2026-10-30,meta_ads,15,15,6901683340975,DYN_PUL NEW Meta,11.23,,,
-2026-10-30,meta_ads,16,16,52533122877779,DYN_WA_Landing_WatsApp,28.3,,,
-2026-10-30,meta_ads,4,4,6905931065575,DYN_AREACL 2.0 - PURCHASE,183.91,,,
+2026-10-30,meta_ads,12,12,6944411197975,DYN_VELOCE New Creative Apr26,263.44,,,
+2026-10-30,meta_ads,13,13,52553120790579,DYN_VELOCE LeadGen CQD PEN [Ecuador],8.73,,,
+2026-10-30,meta_ads,14,14,6634088776775,DYN_VELOCE LeadGen CQD PEN [Tunisia],7.53,,,
+2026-10-30,meta_ads,15,15,6901683340975,DYN_PUL NEW Meta,11.24,,,
+2026-10-30,meta_ads,16,16,52533122877779,DYN_WA_Landing_WatsApp,28.44,,,
+2026-10-30,meta_ads,4,4,6905931065575,DYN_AREACL 2.0 - PURCHASE,185.0,,,
 2026-10-30,crm,12,,,DYN_VELOCE New Creative Apr26,,19,,crm_mapping
 2026-10-30,crm,15,,,DYN_PUL NEW Meta,,2,,crm_mapping
 2026-10-30,crm,16,,,DYN_Landing_Whatsapp,,1,,crm_mapping
@@ -660,3 +660,20 @@
 2026-10-30,crm,7,,,DYN_PUL NEW Prestiti Pensionati QUINTO DIGITALE,,2,,crm_mapping
 2026-10-30,crm,8,,,DYN_VELOCE Cessione del Quinto AIMAX,,6,,crm_mapping
 2026-10-30,crm_area_clienti,,,,AREA CLIENTI,,12,,area_clienti_total
+2026-10-31,google_ads,10,10,23993437149,DYN_VELOCE CQ Pensionati ESTERO - Paesi Prioritari QUINTO DIGITALE,17.47,,,
+2026-10-31,google_ads,11,11,21905808840,DYN_PUL Leads-Pmax,7.206113,,,
+2026-10-31,google_ads,2,2,23993507424,DYN_AREACL CQ e CQP | Calcola Preventivo - QUINTO DIGITALE,42.949374,,,
+2026-10-31,google_ads,3,3,23998450448,DYN_AREACL Delega di Pagamento - QUINTO DIGITALE,9.86,,,
+2026-10-31,google_ads,7,7,24398369465,DYN_PUL NEW Prestiti Pensionati QUINTO DIGITALE,20.036249,,,
+2026-10-31,google_ads,8,8,23990314506,DYN_VELOCE Cessione del Quinto AIMAX,273.726641,,,
+2026-10-31,meta_ads,12,12,6944411197975,DYN_VELOCE New Creative Apr26,205.84,,,
+2026-10-31,meta_ads,13,13,52553120790579,DYN_VELOCE LeadGen CQD PEN [Ecuador],9.53,,,
+2026-10-31,meta_ads,14,14,6634088776775,DYN_VELOCE LeadGen CQD PEN [Tunisia],10.21,,,
+2026-10-31,meta_ads,15,15,6901683340975,DYN_PUL NEW Meta,5.24,,,
+2026-10-31,meta_ads,16,16,52533122877779,DYN_WA_Landing_WatsApp,18.3,,,
+2026-10-31,meta_ads,4,4,6905931065575,DYN_AREACL 2.0 - PURCHASE,167.12,,,
+2026-10-31,crm,12,,,DYN_VELOCE New Creative Apr26,,24,,crm_mapping
+2026-10-31,crm,15,,,DYN_PUL NEW Meta,,1,,crm_mapping
+2026-10-31,crm,18,,,DEM DYNAMICS ADVICE ME,,4,,crm_mapping
+2026-10-31,crm,8,,,DYN_VELOCE Cessione del Quinto AIMAX,,8,,crm_mapping
+2026-10-31,crm_area_clienti,,,,AREA CLIENTI,,9,,area_clienti_total
