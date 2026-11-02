@@ -2,17 +2,16 @@
   "client": "Dynamica Retail",
   "start_date": "2026-11-01",
   "end_date": "2026-11-01",
-  "updated_at": "2026-11-02T03:15:29+01:00",
-  "status": "partial",
+  "updated_at": "2026-11-02T11:55:13+01:00",
+  "status": "success",
   "sources": {
     "google_ads": "ok",
     "meta_ads": "ok",
-    "microsoft_ads": "error",
+    "microsoft_ads": "ok",
     "crm": "ok",
     "outlook": "ok"
   },
   "crm_source": "excel",
   "crm_file": "LEAD_QUESTO_MESE_PULITE.xlsx",
-  "crm_email_received_at": "2026-11-02T02:01:17+00:00",
-  "error": "Microsoft Ads non aggiornato."
+  "crm_email_received_at": "2026-11-02T02:01:17+00:00"
 }
