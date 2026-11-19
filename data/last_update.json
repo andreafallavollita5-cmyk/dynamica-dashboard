@@ -1,8 +1,8 @@
 {
   "client": "Dynamica Retail",
   "start_date": "2026-11-01",
-  "end_date": "2026-11-17",
-  "updated_at": "2026-11-18T03:15:38+01:00",
+  "end_date": "2026-11-18",
+  "updated_at": "2026-11-19T03:15:39+01:00",
   "status": "success",
   "sources": {
     "google_ads": "ok",
@@ -13,5 +13,5 @@
   },
   "crm_source": "excel",
   "crm_file": "LEAD_QUESTO_MESE_PULITE.xlsx",
-  "crm_email_received_at": "2026-11-18T02:01:03+00:00"
+  "crm_email_received_at": "2026-11-19T02:01:00+00:00"
 }
