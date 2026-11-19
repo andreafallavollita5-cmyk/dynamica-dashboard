@@ -235,6 +235,41 @@ class SpendDailyTests(unittest.TestCase):
         self.assertEqual(statuses["Google Ads"]["status"], "ok")
         self.assertEqual(statuses["Meta Ads"]["status"], "error")
 
+    def test_only_mapped_microsoft_campaign_is_saved(self):
+        def microsoft_rows(start, end):
+            return [
+                {
+                    "date": start,
+                    "campaign_id": "533498925",
+                    "campaign_name": "Mappata",
+                    "spend": 15,
+                },
+                {
+                    "date": start,
+                    "campaign_id": "999",
+                    "campaign_name": "Non mappata",
+                    "spend": 99,
+                },
+            ]
+
+        with tempfile.TemporaryDirectory() as directory:
+            output, statuses = extract_daily_spend(
+                date(2026, 10, 1),
+                date(2026, 10, 1),
+                Path(directory) / "spend.csv",
+                google_fetcher=lambda start, end: [],
+                meta_fetcher=lambda start, end: [],
+                microsoft_fetcher=microsoft_rows,
+                manual_fetcher=lambda: [
+                    {"microsoft_campaign_id": "533498925"}
+                ],
+            )
+            saved = pd.read_csv(output, dtype={"campaign_id": str})
+
+        self.assertEqual(saved["campaign_id"].tolist(), ["533498925"])
+        self.assertEqual(saved["source"].tolist(), ["microsoft_ads"])
+        self.assertEqual(statuses["Microsoft Ads"]["status"], "ok")
+
     def test_history_is_updated_and_deduplicated_by_required_key(self):
         def google_rows(start, end):
             return [

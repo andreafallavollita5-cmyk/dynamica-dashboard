@@ -6,6 +6,7 @@ from collections.abc import Callable
 
 from src.google_ads_client import fetch_google_campaign_delivery
 from src.meta_ads_client import fetch_meta_campaign_delivery
+from src.microsoft_ads_client import fetch_microsoft_campaign_delivery
 
 
 DeliveryFetcher = Callable[[str, str], list[dict]]
@@ -67,14 +68,19 @@ def verify_ads_connections(
     end_date: str,
     google_fetcher: DeliveryFetcher | None = None,
     meta_fetcher: DeliveryFetcher | None = None,
+    microsoft_fetcher: DeliveryFetcher | None = None,
 ) -> list[dict]:
     """Run real read-only checks for both platforms for the local dashboard."""
     google_fetcher = google_fetcher or fetch_google_campaign_delivery
     meta_fetcher = meta_fetcher or fetch_meta_campaign_delivery
+    microsoft_fetcher = microsoft_fetcher or fetch_microsoft_campaign_delivery
     _, google_verification, _, _ = fetch_delivery_with_status(
         "Google Ads", google_fetcher, start_date, end_date
     )
     _, meta_verification, _, _ = fetch_delivery_with_status(
         "Meta Ads", meta_fetcher, start_date, end_date
     )
-    return google_verification + meta_verification
+    _, microsoft_verification, _, _ = fetch_delivery_with_status(
+        "Microsoft Ads", microsoft_fetcher, start_date, end_date
+    )
+    return google_verification + meta_verification + microsoft_verification

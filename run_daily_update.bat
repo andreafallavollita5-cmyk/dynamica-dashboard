@@ -11,6 +11,11 @@ if exist ".venv\Scripts\python.exe" (
   set "PYTHON=python"
 )
 
+"%PYTHON%" -m src.outlook_crm_client >>logs\daily_update.log 2>&1
+if errorlevel 1 (
+  echo [%date% %time%] Download Outlook CRM fallito; continuo con l'ultimo export locale valido>>logs\daily_update.log
+)
+
 "%PYTHON%" -m src.build_spend_daily >>logs\daily_update.log 2>&1
 if errorlevel 1 (
   echo [%date% %time%] Aggiornamento storico giornaliero fallito>>logs\daily_update.log

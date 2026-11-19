@@ -11,6 +11,7 @@ from src.writeback_google_sheet import (
 )
 from src.update_sheet_estimates import build_estimate_updates
 from src.writeback_google_sheet import Period
+from src.report_groups import PROVISIONAL_EXCLUDED_CAMPAIGN
 
 
 def report_row(**overrides):
@@ -229,6 +230,50 @@ class WritebackPlanTests(unittest.TestCase):
         )
         with self.assertRaisesRegex(SheetWritebackError, "senza ID"):
             build_update_plan(frame, sheet_values(), [], date(2026, 7, 17))
+
+    def test_provisional_row_is_written_but_subtotal_excludes_its_leads(self):
+        values = [[""] * 23 for _ in range(20)]
+        values[0][3:5] = ["ID Campagna", "Campagna"]
+        values[1][3:5] = ["111", "Area"]
+        values[2][0] = "TOT Area Clienti"
+        values[3][3:5] = ["222", "Pensionati Google"]
+        values[4][4] = PROVISIONAL_EXCLUDED_CAMPAIGN
+        values[5][0] = "TOT Lead Veloce"
+        values[6][4] = "DEM TIG"
+        values[7][0] = "TOT DEM"
+        values[8][5] = 1
+        frame = pd.DataFrame(
+            [
+                report_row(
+                    campaign_name="Pensionati Google",
+                    google_campaign_id="222",
+                    lead_effettive="7",
+                ),
+                report_row(
+                    campaign_name=PROVISIONAL_EXCLUDED_CAMPAIGN,
+                    google_campaign_id="",
+                    lead_effettive="13",
+                    speso_effettivo="",
+                    exclude_from_kpi=True,
+                ),
+                report_row(
+                    campaign_name="DEM TIG",
+                    google_campaign_id="",
+                    lead_effettive="0",
+                    speso_effettivo="0",
+                    cpl_target="8",
+                ),
+                *official_rows(),
+            ]
+        )
+
+        _, updates, _ = build_update_plan(
+            frame, values, [], date(2026, 7, 17)
+        )
+        by_range = {update.range: update.values[0][0] for update in updates}
+
+        self.assertEqual(by_range["N5"], 13)
+        self.assertEqual(by_range["N6"], "=SUM(N4:N5)-N5")
 
     def test_dem_reference_in_descriptive_fields_enables_name_fallback(self):
         frame = pd.DataFrame(

@@ -2,15 +2,16 @@
 
 ## Aggiornamento speso dashboard
 
-Questo comando legge in sola lettura Google Sheet, Google Ads e Meta Ads per il
+Questo comando legge in sola lettura Google Sheet, Google Ads, Meta Ads e
+Microsoft Ads per il
 periodo dal primo giorno del mese a ieri, quindi rigenera il CSV latest:
 
 ```powershell
 .\.venv\Scripts\python.exe -m src.build_report_data
 ```
 
-Lo speso viene associato prima tramite `google_campaign_id` o
-`meta_campaign_id`; il nome è usato come fallback solo quando l'ID non è
+Lo speso viene associato prima tramite `google_campaign_id`,
+`meta_campaign_id` o `microsoft_campaign_id`; il nome è usato come fallback solo quando l'ID non è
 presente. Conversioni Google e azioni/lead Meta non vengono richieste né usate
 come lead effettive.
 
@@ -30,7 +31,7 @@ Il giorno 1 elabora il mese precedente completo. Se una sola API Ads non è
 disponibile, mantiene l'ultimo valore valido dello stesso mese e segnala
 l'aggiornamento parziale; se falliscono entrambe, i latest restano invariati.
 
-Per installare o aggiornare l'attività Windows delle 07:00, aprire PowerShell
+Per installare o aggiornare l'attività Windows delle 03:00, aprire PowerShell
 come amministratore ed eseguire:
 
 ```powershell
@@ -40,6 +41,59 @@ powershell -ExecutionPolicy Bypass -File .\scripts\install_daily_task.ps1
 Windows richiede la password dell'account in una finestra protetta; la password
 non viene scritta nei file. L'attività recupera gli avvii saltati, può riattivare
 il PC e ritenta tre volte in caso di errore.
+
+### Allegati CRM da Outlook
+
+Il primo passo della routine esegue `src.outlook_crm_client`. Quando
+`OUTLOOK_ENABLED=true`, il modulo legge in sola lettura la Posta in arrivo di
+`dyn.leadgen@tig.it`, cerca i messaggi con oggetto esattamente `DYNAMICA CRM`,
+scarica il più recente allegato `.xlsx`, lo valida con il parser CRM esistente e
+lo salva atomicamente in `data/input/`. Non contrassegna, sposta o elimina le
+email. Il timestamp locale del file corrisponde alla ricezione del messaggio,
+così il controllo `stale` continua a funzionare.
+
+Se non trova un nuovo allegato valido, effettua tre controlli a distanza di 15
+minuti (03:00, 03:15 e 03:30). Dopo l'ultimo tentativo la pipeline prosegue con
+l'ultimo export valido, marca Outlook e CRM come `stale` e la dashboard mostra
+un aggiornamento parziale. Lo stato locale idempotente è conservato in
+`data/input/.outlook_crm_status.json`, cartella esclusa da GitHub.
+
+Per scaricare gli allegati serve il ruolo applicativo `Mail.Read`. La soluzione
+preferita è assegnarlo tramite **Exchange Online Application RBAC**, con uno
+scope limitato alla sola casella `dyn.leadgen@tig.it`. In alternativa si può
+concedere Microsoft Graph **Application** `Mail.Read` in Entra con consenso
+amministratore e limitarlo con una Application Access Policy Exchange. Non
+lasciare un consenso Entra `Mail.Read` privo di limitazione, perché per default
+copre tutte le caselle dell'organizzazione. La configurazione locale è:
+
+```text
+OUTLOOK_ENABLED=false
+OUTLOOK_REUSE_DYNAMICS_CREDENTIALS=false
+OUTLOOK_TENANT_ID=
+OUTLOOK_CLIENT_ID=
+OUTLOOK_CLIENT_SECRET=
+OUTLOOK_MAILBOX=dyn.leadgen@tig.it
+OUTLOOK_CRM_SUBJECT=DYNAMICA CRM
+OUTLOOK_CRM_ATTACHMENT_PATTERN=*.xlsx
+OUTLOOK_RETRY_ATTEMPTS=3
+OUTLOOK_RETRY_DELAY_SECONDS=900
+```
+
+Quando si sceglie esplicitamente di riutilizzare l'app Entra Dynamics, impostare
+`OUTLOOK_REUSE_DYNAMICS_CREDENTIALS=true`: le tre credenziali Outlook possono
+restare vuote e vengono riutilizzate le variabili `DYNAMICS_TENANT_ID`,
+`DYNAMICS_CLIENT_ID` e `DYNAMICS_CLIENT_SECRET`. Nessuna credenziale deve essere
+inserita nel codice o committata.
+
+Per provare uno specifico allegato senza attivare la routine giornaliera:
+
+```powershell
+.\.venv\Scripts\python.exe -m src.outlook_crm_client --attachment-name 482bf6d9-5c52-457b-9fcc-02d9d14dc8f5.xlsx
+```
+
+Se Outlook non è raggiungibile, il batch registra un avviso e continua con
+l'ultimo export locale valido; il parser e la dashboard applicano la gestione
+`stale` già esistente.
 
 ## Dynamics 365 / Dataverse
 
@@ -93,6 +147,24 @@ Il file locale `data/raw/dynamics_raw.csv` contiene soltanto l'ID trasformato in
 hash, Campagna, UTM, data e risultato del matching. È escluso da GitHub.
 
 ## Write-back Google Sheet
+
+### Piani mensili precaricati
+
+La pipeline cerca prima un worksheet `manual_inputs_YYYY-MM` e usa
+`manual_inputs` soltanto come fallback. La selezione segue il mese del report:
+il giorno 1 continua quindi a chiudere il mese precedente, mentre dal giorno 2
+usa il piano del nuovo mese.
+
+Dry-run dell'import Excel:
+
+```powershell
+.\.venv\Scripts\python.exe -m src.import_monthly_plan `
+  --source "C:\percorso\Piano.xlsx" --month 2026-11 --dry-run
+```
+
+Rimuovere `--dry-run` soltanto quando tutte le campagne Ads risultano
+riconciliate. Le righe DEM possono restare senza ID. Il file Excel sorgente non
+viene copiato nella repository.
 
 Prima di generare `data/report_data.csv`, la pipeline aggiorna nel worksheet
 `manual_inputs` i quattro controlli periodo e le formule di stima con:
@@ -167,6 +239,14 @@ ieri. Il filtro può selezionare un intervallo interno a un mese storico, ma non
 può attraversare due mesi. KPI, grafici, tabella, alert e download CSV/Excel
 vengono ricalcolati sul periodo selezionato.
 
+I piani disponibili prima degli actual vengono pubblicati in
+`data/plans/YYYY-MM/` con `report_data.csv`,
+`report_daily_metrics.csv` e `last_update.json`. Si generano con
+`python -m src.build_future_plan --month YYYY-MM`. Il dataset usa
+`dataset_type=future_plan`, mantiene vuoti actual e indicatori dipendenti dagli
+actual e non attiva alert operativi. Quando il latest copre lo stesso mese, la
+dashboard assegna automaticamente precedenza ai dati reali.
+
 Le tre coppie storica/`QUINTO DIGITALE` identificate dalle righe planning
 `9/10`, `11/12` e `13/14` restano visibili come campagne separate. Per ogni
 coppia, Stima Lead, Delta Lead, CPL Effettivo e Delta CPL sono metriche uniche
@@ -183,15 +263,15 @@ LOCAL_VERIFICATION_MODE=true
 ```
 
 Avviare poi `streamlit run app.py`. In fondo alla dashboard comparirà la sezione
-richiudibile **Verifica locale collegamenti Ads**. Il pulsante interroga entrambe
-le API in sola lettura e mostra piattaforma, campaign ID, nome, periodo, speso,
+richiudibile **Verifica locale collegamenti Ads**. Il pulsante interroga le tre
+API in sola lettura e mostra piattaforma, campaign ID, nome, periodo, speso,
 stato ed errore semplice. Lasciare il flag assente o `false` su Streamlit Cloud:
 la sezione non viene renderizzata nella versione cliente.
 
 Questo progetto fa tre cose:
 
 1. genera un `refresh_token` OAuth per Google Ads;
-2. invia query alle API Google Ads e Meta Ads;
+2. invia query alle API Google Ads, Meta Ads e Microsoft Ads;
 3. salva i risultati in un database SQLite locale.
 
 ## Setup
@@ -284,4 +364,31 @@ Campi esportati:
 - `impressions`
 - `leads`, calcolato dalle azioni Meta legate ai lead
 - `cpl`, calcolato come speso / lead
+
+## Microsoft Ads
+
+Microsoft Ads usa l'ID presente nella colonna `ID Campagna` della riga con
+piattaforma `Microsoft` o `Bing`. La pipeline scarica soltanto lo spend delle
+campagne mappate e usa il fuso di rendicontazione di Roma.
+
+Nel file `.env` configurare account, customer, developer token e un redirect URI
+registrato nell'app Entra. Client ID, tenant ID e client secret possono restare
+vuoti se sono gli stessi già configurati per Dynamics. Il developer token e il
+refresh token non devono essere committati.
+
+Una sola volta, generare il consenso utente:
+
+```powershell
+.\.venv\Scripts\python.exe -m scripts.authorize_microsoft_ads
+```
+
+Dopo il login, copiare l'URL completa di ritorno e completare lo scambio:
+
+```powershell
+.\.venv\Scripts\python.exe -m scripts.authorize_microsoft_ads --response-uri "URL_COMPLETA"
+```
+
+Il refresh token viene salvato in `.env` e aggiornato automaticamente quando
+Microsoft lo ruota. In caso di errore, valgono le stesse regole `partial/stale`
+delle altre piattaforme e non vengono mai riutilizzati dati del mese precedente.
 - `actions_json`, per conservare il dettaglio conversioni grezzo restituito da Meta

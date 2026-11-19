@@ -8,6 +8,7 @@ import csv
 import hashlib
 import json
 import math
+import os
 from collections.abc import Callable
 from datetime import date, datetime
 from pathlib import Path
@@ -27,7 +28,14 @@ from src.google_sheets_client import (
     fetch_manual_inputs,
 )
 from src.meta_ads_client import fetch_meta_campaign_delivery
-from src.report_groups import CLIENT_GROUPS, SUMMARY_FIELDS, client_subtotal_group
+from src.microsoft_ads_client import fetch_microsoft_campaign_delivery
+from src.outlook_crm_client import read_outlook_status
+from src.report_groups import (
+    CLIENT_GROUPS,
+    SUMMARY_FIELDS,
+    client_subtotal_group,
+    is_excluded_from_kpis,
+)
 from src.utils import safe_divide
 
 
@@ -37,10 +45,11 @@ REPORT_COLUMNS = [
     "platform", "channel", "campaign_name", "investimento_media",
     "percentuale_investimento", "cpp_medio", "stima_pratiche", "cpl_target",
     "stima_lead", "stima_lead_giornaliere", "stima_lead_progressiva",
-    "lead_effettive", "delta_lead", "stima_spending_giornaliera",
+    "lead_effettive", "exclude_from_kpi", "delta_lead", "stima_spending_giornaliera",
     "stima_spending_progressiva",
     "speso_effettivo", "delta_speso", "delta_delivery_pct", "cpl_effettivo",
     "delta_cpl", "action", "google_campaign_id", "meta_campaign_id",
+    "microsoft_campaign_id",
     "dynamics_campaign_key", "source_status", "lead_allocation_method",
 ]
 DELIVERY_COLUMNS = [
@@ -62,6 +71,29 @@ def _number(value: object) -> float | None:
         return number if math.isfinite(number) else None
     except (TypeError, ValueError):
         return None
+
+
+def _outlook_export_is_current(
+    last_success: dict,
+    report_end: date,
+    timezone_name: str,
+) -> bool:
+    """Return true when the saved export was received after the report period.
+
+    The morning CRM email contains data through the previous day. A later,
+    redundant Graph failure must not turn that already acquired export stale.
+    """
+    raw_received_at = str(last_success.get("message_received_at") or "").strip()
+    if not raw_received_at:
+        return False
+    try:
+        received_at = datetime.fromisoformat(raw_received_at.replace("Z", "+00:00"))
+        if received_at.tzinfo is None:
+            received_at = received_at.replace(tzinfo=ZoneInfo(timezone_name))
+        received_date = received_at.astimezone(ZoneInfo(timezone_name)).date()
+    except (ValueError, TypeError, KeyError):
+        return False
+    return received_date > report_end
 
 
 MANUAL_SUMMARY_FIELDS = (
@@ -292,11 +324,15 @@ def _match_spend(
 
 
 def _platforms_for_row(row: dict) -> list[tuple[str, str]]:
+    if is_excluded_from_kpis(row):
+        return []
     platforms: list[tuple[str, str]] = []
     if str(row.get("google_campaign_id") or "").strip():
         platforms.append(("google", "google_campaign_id"))
     if str(row.get("meta_campaign_id") or "").strip():
         platforms.append(("meta", "meta_campaign_id"))
+    if str(row.get("microsoft_campaign_id") or "").strip():
+        platforms.append(("microsoft", "microsoft_campaign_id"))
     if platforms:
         return platforms
 
@@ -305,6 +341,8 @@ def _platforms_for_row(row: dict) -> list[tuple[str, str]]:
         return [("google", "google_campaign_id")]
     if "meta" in platform or "facebook" in platform or "instagram" in platform:
         return [("meta", "meta_campaign_id")]
+    if "microsoft" in platform or "bing" in platform:
+        return [("microsoft", "microsoft_campaign_id")]
     return []
 
 
@@ -357,6 +395,7 @@ def _resolve_ads_spend(
         has_explicit_ads_id = bool(
             str(manual.get("google_campaign_id") or "").strip()
             or str(manual.get("meta_campaign_id") or "").strip()
+            or str(manual.get("microsoft_campaign_id") or "").strip()
         )
         if not has_explicit_ads_id or not platforms_by_row[index] or group not in last_parent:
             continue
@@ -389,6 +428,8 @@ def build_report_rows(
     crm_leads_by_excel_row: dict[int, int] | None = None,
     lead_allocation_methods: dict[int, str] | None = None,
     area_clienti_total: float | None = None,
+    microsoft_rows: list[dict] | None = None,
+    microsoft_status: str = "ok",
 ) -> list[dict]:
     """Pure merge/calculation function, kept injectable for technical mocks."""
     report_date = report_date or date.today()
@@ -396,8 +437,16 @@ def build_report_rows(
     elapsed_days = max((end_date - start_date).days + 1, 0)
     dem_days_in_month = working_days_in_month(start_date)
     dem_elapsed_days = working_days_inclusive(start_date, end_date)
-    delivery = {"google": google_rows, "meta": meta_rows}
-    statuses = {"google": google_status, "meta": meta_status}
+    delivery = {
+        "google": google_rows,
+        "meta": meta_rows,
+        "microsoft": microsoft_rows or [],
+    }
+    statuses = {
+        "google": google_status,
+        "meta": meta_status,
+        "microsoft": microsoft_status,
+    }
     output: list[dict] = []
     crm_mode = crm_leads_by_excel_row is not None
     crm_leads_by_excel_row = crm_leads_by_excel_row or {}
@@ -495,6 +544,7 @@ def build_report_rows(
                 "stima_lead_giornaliere": stima_lead_giornaliere,
                 "stima_lead_progressiva": stima_lead_progressiva,
                 "lead_effettive": lead_effettive,
+                "exclude_from_kpi": is_excluded_from_kpis(manual),
                 "delta_lead": delta_lead,
                 "stima_spending_giornaliera": stima_spending_giornaliera,
                 "stima_spending_progressiva": stima_spending_progressiva,
@@ -506,6 +556,9 @@ def build_report_rows(
                 "action": manual.get("action"),
                 "google_campaign_id": str(manual.get("google_campaign_id") or ""),
                 "meta_campaign_id": str(manual.get("meta_campaign_id") or ""),
+                "microsoft_campaign_id": str(
+                    manual.get("microsoft_campaign_id") or ""
+                ),
                 "dynamics_campaign_key": str(manual.get("dynamics_campaign_key") or ""),
                 "source_status": (
                     ";".join(source_parts)
@@ -561,14 +614,15 @@ def _sum(rows: list[dict], field: str) -> float | None:
 
 
 def _summary_row(rows: list[dict], label: str, row_type: str) -> dict:
-    investment = _sum(rows, "investimento_media")
-    practices = _sum(rows, "stima_pratiche")
-    lead_target = _sum(rows, "stima_lead")
-    lead_progress = _sum(rows, "stima_lead_progressiva")
-    leads = _sum(rows, "lead_effettive")
-    spend_plan = _sum(rows, "stima_spending_progressiva")
-    spend_daily_plan = _sum(rows, "stima_spending_giornaliera")
-    spend = _sum(rows, "speso_effettivo")
+    included_rows = [row for row in rows if not is_excluded_from_kpis(row)]
+    investment = _sum(included_rows, "investimento_media")
+    practices = _sum(included_rows, "stima_pratiche")
+    lead_target = _sum(included_rows, "stima_lead")
+    lead_progress = _sum(included_rows, "stima_lead_progressiva")
+    leads = _sum(included_rows, "lead_effettive")
+    spend_plan = _sum(included_rows, "stima_spending_progressiva")
+    spend_daily_plan = _sum(included_rows, "stima_spending_giornaliera")
+    spend = _sum(included_rows, "speso_effettivo")
     cpp = safe_divide(investment, practices)
     cpl_target = safe_divide(investment, lead_target)
     cpl = safe_divide(spend, leads)
@@ -578,7 +632,7 @@ def _summary_row(rows: list[dict], label: str, row_type: str) -> dict:
     delta_spend = (
         spend - spend_plan if spend is not None and spend_plan is not None else None
     )
-    statuses = {str(row.get("source_status") or "") for row in rows}
+    statuses = {str(row.get("source_status") or "") for row in included_rows}
     status = (
         "error"
         if "error" in statuses
@@ -813,6 +867,7 @@ def build_report_data(
     mapping_fetcher: MappingFetcher | None = None,
     google_fetcher: DeliveryFetcher | None = None,
     meta_fetcher: DeliveryFetcher | None = None,
+    microsoft_fetcher: DeliveryFetcher | None = None,
     crm_fetcher: CRMFetcher | None = None,
 ) -> Path:
     """Run the read-only sources and generate CSV plus safe update metadata."""
@@ -828,6 +883,18 @@ def build_report_data(
     dynamics_mode = (settings.dynamics_enabled or crm_fetcher is not None) and (
         crm_export_path is None
     )
+    outlook_mode = (
+        not dynamics_mode
+        and crm_export_path is None
+        and os.getenv("OUTLOOK_ENABLED", "false").strip().casefold() == "true"
+    )
+    outlook_metadata = read_outlook_status() if outlook_mode else {"status": "disabled"}
+    outlook_status = str(outlook_metadata.get("status") or "missing").casefold()
+    if outlook_status in {"missing", "invalid"}:
+        outlook_status = "unavailable"
+    outlook_last_success = outlook_metadata.get("last_success")
+    if not isinstance(outlook_last_success, dict):
+        outlook_last_success = {}
     crm_enabled = (
         dynamics_mode
         or crm_fetcher is not None
@@ -835,12 +902,16 @@ def build_report_data(
         or mapping_fetcher is not None
         or crm_export_path is not None
     )
-    manual_fetcher = manual_fetcher or fetch_manual_inputs
     mapping_fetcher = mapping_fetcher or fetch_crm_mapping_from_google_sheet
     google_fetcher = google_fetcher or fetch_google_campaign_delivery
     meta_fetcher = meta_fetcher or fetch_meta_campaign_delivery
+    microsoft_fetcher = microsoft_fetcher or fetch_microsoft_campaign_delivery
 
-    manual_rows = manual_fetcher()
+    manual_rows = (
+        manual_fetcher()
+        if manual_fetcher is not None
+        else fetch_manual_inputs(start)
+    )
     crm_allocations: dict[int, float | None] | None = None
     allocation_methods: dict[int, str] | None = None
     crm_normalized: list[dict] = []
@@ -868,6 +939,24 @@ def build_report_data(
                     crm_error = (
                         "Export CRM non aggiornato fino alla data finale del report."
                     )
+                outlook_export_is_current = (
+                    outlook_mode
+                    and not selection.is_stale
+                    and _outlook_export_is_current(
+                        outlook_last_success,
+                        end,
+                        settings.timezone,
+                    )
+                )
+                if outlook_export_is_current:
+                    # The local status file may record a later redundant Graph
+                    # error, but this report still uses today's valid export.
+                    outlook_status = "ok"
+                elif outlook_mode and outlook_status != "ok":
+                    crm_status = "stale"
+                    crm_error = (
+                        "Outlook CRM non aggiornato; ultimo export valido mantenuto."
+                    )
             mapping_rows = mapping_fetcher()
             crm_allocations, allocation_methods, crm_normalized = match_crm_leads(
                 crm_leads, manual_rows, mapping_rows
@@ -894,8 +983,41 @@ def build_report_data(
     meta_rows, meta_verification, meta_status, meta_error = fetch_delivery_with_status(
         "Meta Ads", meta_fetcher, start.isoformat(), end.isoformat()
     )
+    microsoft_ids = {
+        str(row.get("microsoft_campaign_id") or "").strip()
+        for row in manual_rows
+        if str(row.get("microsoft_campaign_id") or "").strip()
+    }
+    if microsoft_ids:
+        (
+            microsoft_rows,
+            microsoft_verification,
+            microsoft_status,
+            microsoft_error,
+        ) = fetch_delivery_with_status(
+            "Microsoft Ads", microsoft_fetcher, start.isoformat(), end.isoformat()
+        )
+        microsoft_rows = [
+            row
+            for row in microsoft_rows
+            if str(row.get("campaign_id") or "").strip() in microsoft_ids
+        ]
+        microsoft_verification = [
+            row
+            for row in microsoft_verification
+            if not str(row.get("campaign_id") or "").strip()
+            or str(row.get("campaign_id") or "").strip() in microsoft_ids
+        ]
+    else:
+        microsoft_rows = []
+        microsoft_verification = []
+        microsoft_status = "disabled"
+        microsoft_error = ""
     _write_csv(ROOT / "data/raw/google_ads_raw.csv", google_rows, DELIVERY_COLUMNS)
     _write_csv(ROOT / "data/raw/meta_ads_raw.csv", meta_rows, DELIVERY_COLUMNS)
+    _write_csv(
+        ROOT / "data/raw/microsoft_ads_raw.csv", microsoft_rows, DELIVERY_COLUMNS
+    )
     if crm_fetch_succeeded:
         _write_csv(
             ROOT / "data/raw/dynamics_raw.csv",
@@ -905,7 +1027,9 @@ def build_report_data(
                 "match_status", "matched_excel_row", "lead_allocation_method",
             ],
         )
-    verification_rows = google_verification + meta_verification
+    verification_rows = (
+        google_verification + meta_verification + microsoft_verification
+    )
     _write_csv(
         ROOT / "data/raw/ads_delivery_verification.csv",
         verification_rows,
@@ -913,9 +1037,12 @@ def build_report_data(
          "speso_estratto", "stato_collegamento", "errore"],
     )
 
-    if google_status == "error" and meta_status == "error":
+    active_statuses = [google_status, meta_status]
+    if microsoft_ids:
+        active_statuses.append(microsoft_status)
+    if all(status == "error" for status in active_statuses):
         raise RuntimeError(
-            "Aggiornamento interrotto: entrambi i collegamenti Ads non sono disponibili. "
+            "Aggiornamento interrotto: tutti i collegamenti Ads non sono disponibili. "
             "I file latest precedenti sono rimasti invariati."
         )
 
@@ -928,6 +1055,10 @@ def build_report_data(
         meta_rows = _previous_delivery(previous_rows, "meta")
         meta_status = "stale" if meta_rows else "error"
         source_messages.append("Meta Ads non aggiornato.")
+    if microsoft_status == "error":
+        microsoft_rows = _previous_delivery(previous_rows, "microsoft")
+        microsoft_status = "stale" if microsoft_rows else "error"
+        source_messages.append("Microsoft Ads non aggiornato.")
     if crm_error:
         source_messages.append(crm_error)
 
@@ -937,6 +1068,8 @@ def build_report_data(
         crm_leads_by_excel_row=crm_allocations,
         lead_allocation_methods=allocation_methods,
         area_clienti_total=area_clienti_total,
+        microsoft_rows=microsoft_rows,
+        microsoft_status=microsoft_status,
     )
     if crm_status in {"stale", "unavailable"}:
         for row in rows:
@@ -954,10 +1087,13 @@ def build_report_data(
         "sources": {
             "google_ads": google_status,
             "meta_ads": meta_status,
+            "microsoft_ads": microsoft_status,
             "crm": crm_status,
+            "outlook": outlook_status,
         },
         "crm_source": crm_source,
         "crm_file": crm_file,
+        "crm_email_received_at": outlook_last_success.get("message_received_at"),
     }
     if source_messages:
         metadata["error"] = " ".join(source_messages)

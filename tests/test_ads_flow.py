@@ -8,11 +8,12 @@ import pandas as pd
 
 from app import calculate_cpl_efficiency, calculate_dashboard_metrics
 from src.ads_verification import verify_ads_connections
-from src.build_report_data import build_report_data, build_report_rows
+from src.build_report_data import REPORT_COLUMNS, build_report_data, build_report_rows
 from src.google_sheets_client import _is_enabled, _rows_from_values
 from src.google_ads_client import fetch_google_campaign_delivery
 from src.google_ads_client import GoogleAdsDeliveryError, _build_client
 from src.meta_ads_client import fetch_meta_campaign_delivery
+from src.report_groups import PROVISIONAL_EXCLUDED_CAMPAIGN
 
 
 def manual_row(**overrides):
@@ -23,7 +24,8 @@ def manual_row(**overrides):
         "cpp_medio": None, "stima_pratiche": None, "cpl_target": 20,
         "stima_lead": 310, "lead_effettive_manual": 10,
         "action": "Manuale", "google_campaign_id": "123",
-        "meta_campaign_id": "", "dynamics_campaign_key": "",
+        "meta_campaign_id": "", "microsoft_campaign_id": "",
+        "dynamics_campaign_key": "",
     }
     row.update(overrides)
     return row
@@ -55,6 +57,36 @@ class AdsReportFlowTests(unittest.TestCase):
         self.assertEqual(rows[0]["source_status"], "google:ok")
         self.assertEqual(rows[1]["speso_effettivo"], 88.25)
         self.assertEqual(rows[1]["source_status"], "meta:ok")
+
+    def test_microsoft_spend_is_joined_by_campaign_id(self):
+        manual = [
+            manual_row(
+                platform="Microsoft",
+                google_campaign_id="",
+                microsoft_campaign_id="533498925",
+                campaign_name="DYN_VELOCE Cessione del Quinto",
+            )
+        ]
+        microsoft = [
+            {
+                "campaign_id": "533498925",
+                "campaign_name": "DYN_VELOCE Cessione del Quinto",
+                "spend": 321.45,
+            }
+        ]
+
+        rows = build_report_rows(
+            manual,
+            [],
+            [],
+            date(2026, 10, 1),
+            date(2026, 10, 12),
+            microsoft_rows=microsoft,
+        )
+
+        self.assertEqual(rows[0]["speso_effettivo"], 321.45)
+        self.assertEqual(rows[0]["source_status"], "microsoft:ok")
+        self.assertEqual(rows[0]["microsoft_campaign_id"], "533498925")
 
     def test_effective_leads_come_only_from_manual_input(self):
         google = [{"campaign_id": "123", "campaign_name": "Campagna test",
@@ -146,6 +178,73 @@ class AdsReportFlowTests(unittest.TestCase):
         rows = _rows_from_values(values)
         self.assertEqual(len(rows), 1)
         self.assertFalse(_is_enabled(rows[0]))
+
+    def test_provisional_excluded_campaign_without_ads_id_stays_enabled(self):
+        values = [
+            ["Funnel", "Canale", "Canale", "ID Campagna", "Campagna",
+             "Investimento Media"],
+            ["Lead Veloce", "Google", "Search", "",
+             PROVISIONAL_EXCLUDED_CAMPAIGN, ""],
+            ["TOT Lead Veloce", "", "", "", "", ""],
+            ["TOT DEM", "", "", "", "", ""],
+        ]
+
+        rows = _rows_from_values(values)
+
+        self.assertTrue(_is_enabled(rows[0]))
+
+    def test_provisional_campaign_is_visible_but_excluded_from_totals(self):
+        rows = build_report_rows(
+            [
+                manual_row(
+                    excel_row=9,
+                    campaign_name="DYN_VELOCE CQ Pensionati QUINTO DIGITALE",
+                    google_campaign_id="23993375943",
+                ),
+                manual_row(
+                    excel_row=7,
+                    campaign_name=PROVISIONAL_EXCLUDED_CAMPAIGN,
+                    google_campaign_id="",
+                    investimento_media=None,
+                    stima_lead=None,
+                    cpl_target=None,
+                ),
+            ],
+            [],
+            [],
+            date(2026, 10, 1),
+            date(2026, 10, 19),
+            crm_leads_by_excel_row={9: 7, 7: 13},
+            area_clienti_total=0,
+        )
+
+        provisional = next(
+            row for row in rows
+            if row["campaign_name"] == PROVISIONAL_EXCLUDED_CAMPAIGN
+        )
+        subtotal = next(row for row in rows if row["campaign_name"] == "TOT Lead Veloce")
+        total = next(row for row in rows if row["campaign_name"] == "TOTALE GENERALE")
+        self.assertEqual(provisional["lead_effettive"], 13)
+        self.assertTrue(provisional["exclude_from_kpi"])
+        self.assertIsNone(provisional["speso_effettivo"])
+        self.assertEqual(subtotal["lead_effettive"], 7)
+        self.assertEqual(total["lead_effettive"], 7)
+
+    def test_legacy_sheet_maps_microsoft_campaign_id(self):
+        values = [
+            ["Funnel", "Canale", "Canale", "ID Campagna", "Campagna",
+             "Investimento Media"],
+            ["Lead Veloce", "Microsoft", "Search", "533498925",
+             "DYN_VELOCE Cessione del Quinto", 1000],
+            ["TOT Lead Veloce", "", "", "", "", 1000],
+            ["TOT DEM", "", "", "", "", 0],
+        ]
+
+        rows = _rows_from_values(values)
+
+        self.assertEqual(rows[0]["microsoft_campaign_id"], "533498925")
+        self.assertEqual(rows[0]["google_campaign_id"], "")
+        self.assertEqual(rows[0]["meta_campaign_id"], "")
 
     def test_legacy_sheet_extracts_official_totals_and_area_subtotal(self):
         values = [
@@ -423,6 +522,105 @@ class AdsReportFlowTests(unittest.TestCase):
                     meta_fetcher=fail,
                 )
             self.assertEqual(output.read_text(encoding="utf-8"), "previous-latest")
+
+    def test_microsoft_failure_reuses_only_same_month_value_and_marks_stale(self):
+        import csv
+        import json
+        from pathlib import Path
+        from tempfile import TemporaryDirectory
+
+        manual = manual_row(
+            platform="Microsoft",
+            google_campaign_id="",
+            microsoft_campaign_id="533498925",
+        )
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            output = root / "data" / "report_data.csv"
+            output.parent.mkdir(parents=True)
+            previous = {column: "" for column in REPORT_COLUMNS}
+            previous.update(
+                {
+                    "row_type": "campaign",
+                    "start_date": "2026-10-01",
+                    "end_date": "2026-10-10",
+                    "excel_row": "2",
+                    "campaign_name": "Campagna test",
+                    "microsoft_campaign_id": "533498925",
+                    "speso_effettivo": "77.5",
+                }
+            )
+            with output.open("w", newline="", encoding="utf-8-sig") as stream:
+                writer = csv.DictWriter(stream, fieldnames=REPORT_COLUMNS)
+                writer.writeheader()
+                writer.writerow(previous)
+
+            with patch("src.build_report_data.ROOT", root):
+                build_report_data(
+                    output_path=output,
+                    today=date(2026, 10, 13),
+                    manual_fetcher=lambda: [manual],
+                    google_fetcher=lambda start, end: [],
+                    meta_fetcher=lambda start, end: [],
+                    microsoft_fetcher=lambda start, end: (_ for _ in ()).throw(
+                        RuntimeError("Microsoft non disponibile")
+                    ),
+                )
+
+            saved = pd.read_csv(output, dtype=str, keep_default_na=False)
+            metadata = json.loads(
+                (root / "data" / "last_update.json").read_text(encoding="utf-8")
+            )
+        self.assertEqual(float(saved.loc[0, "speso_effettivo"]), 77.5)
+        self.assertIn("microsoft:stale", saved.loc[0, "source_status"])
+        self.assertEqual(metadata["status"], "partial")
+        self.assertEqual(metadata["sources"]["microsoft_ads"], "stale")
+
+    def test_microsoft_failure_never_reuses_previous_month(self):
+        import csv
+        from pathlib import Path
+        from tempfile import TemporaryDirectory
+
+        manual = manual_row(
+            platform="Microsoft",
+            google_campaign_id="",
+            microsoft_campaign_id="533498925",
+        )
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            output = root / "data" / "report_data.csv"
+            output.parent.mkdir(parents=True)
+            previous = {column: "" for column in REPORT_COLUMNS}
+            previous.update(
+                {
+                    "row_type": "campaign",
+                    "start_date": "2026-09-01",
+                    "end_date": "2026-09-30",
+                    "excel_row": "2",
+                    "microsoft_campaign_id": "533498925",
+                    "speso_effettivo": "88",
+                }
+            )
+            with output.open("w", newline="", encoding="utf-8-sig") as stream:
+                writer = csv.DictWriter(stream, fieldnames=REPORT_COLUMNS)
+                writer.writeheader()
+                writer.writerow(previous)
+
+            with patch("src.build_report_data.ROOT", root):
+                build_report_data(
+                    output_path=output,
+                    today=date(2026, 10, 13),
+                    manual_fetcher=lambda: [manual],
+                    google_fetcher=lambda start, end: [],
+                    meta_fetcher=lambda start, end: [],
+                    microsoft_fetcher=lambda start, end: (_ for _ in ()).throw(
+                        RuntimeError("Microsoft non disponibile")
+                    ),
+                )
+
+            saved = pd.read_csv(output, dtype=str, keep_default_na=False)
+        self.assertEqual(saved.loc[0, "speso_effettivo"], "")
+        self.assertIn("microsoft:error", saved.loc[0, "source_status"])
 
 
 if __name__ == "__main__":

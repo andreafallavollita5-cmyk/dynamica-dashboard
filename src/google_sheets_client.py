@@ -10,6 +10,7 @@ from __future__ import annotations
 import csv
 import os
 import sys
+from datetime import date
 from pathlib import Path
 
 import gspread
@@ -17,13 +18,18 @@ from dotenv import load_dotenv
 from gspread.exceptions import APIError, SpreadsheetNotFound, WorksheetNotFound
 from gspread.utils import ValueRenderOption
 
-from src.report_groups import CLIENT_GROUPS, SUMMARY_FIELDS
+from src.report_groups import (
+    CLIENT_GROUPS,
+    PROVISIONAL_EXCLUDED_CAMPAIGN,
+    SUMMARY_FIELDS,
+)
 
 
 ROOT = Path(__file__).resolve().parents[1]
 ENV_PATH = ROOT / ".env"
 RAW_OUTPUT_PATH = ROOT / "data" / "raw" / "google_sheet_raw.csv"
 MAPPING_WORKSHEET_DEFAULT = "Mapping campagne-crm"
+MONTHLY_WORKSHEET_PREFIX = "manual_inputs_"
 
 REQUIRED_COLUMNS = [
     "excel_row",
@@ -53,6 +59,7 @@ STRING_COLUMNS = {
     "action",
     "google_campaign_id",
     "meta_campaign_id",
+    "microsoft_campaign_id",
     "dynamics_campaign_key",
     "enabled",
 }
@@ -66,6 +73,8 @@ SUMMARY_SOURCE_COLUMNS = {
         for field in SUMMARY_FIELDS
     ),
 }
+
+OPTIONAL_COLUMNS = {"microsoft_campaign_id"}
 LEGACY_DERIVED_COLUMNS = {
     "stima_lead_giornaliere",
     "stima_lead_progressiva",
@@ -142,6 +151,23 @@ def _resolve_service_account_path(path_value: str) -> Path:
     return path
 
 
+def monthly_manual_worksheet_name(report_start: date) -> str:
+    """Return the optional month-specific planning worksheet name."""
+    return f"{MONTHLY_WORKSHEET_PREFIX}{report_start:%Y-%m}"
+
+
+def resolve_manual_worksheet(spreadsheet, report_start: date | None = None):
+    """Prefer a month-specific plan and fall back to the configured worksheet."""
+    config = _load_sheet_config()
+    if report_start is not None:
+        candidate = monthly_manual_worksheet_name(report_start)
+        try:
+            return spreadsheet.worksheet(candidate)
+        except WorksheetNotFound:
+            pass
+    return spreadsheet.worksheet(config["worksheet_name"])
+
+
 def _normalize_header(header: list[str]) -> list[str]:
     return [cell.strip() for cell in header]
 
@@ -180,7 +206,7 @@ def _parse_number(value: str) -> float | int | None | str:
 
 def _normalize_row(row: dict[str, str]) -> dict:
     normalized = dict(row)
-    for column in [*REQUIRED_COLUMNS, *LEGACY_DERIVED_COLUMNS]:
+    for column in [*REQUIRED_COLUMNS, *OPTIONAL_COLUMNS, *LEGACY_DERIVED_COLUMNS]:
         if column not in normalized:
             continue
         value = normalized.get(column, "")
@@ -275,8 +301,18 @@ def _rows_from_legacy_dashboard(values: list[list[str]]) -> list[dict]:
             continue
 
         platform_key = effective_platform.casefold()
-        ads_platform = "google" in platform_key or "meta" in platform_key
-        enabled = "false" if ads_platform and not campaign_id else "true"
+        ads_platform = any(
+            name in platform_key for name in ("google", "meta", "microsoft", "bing")
+        )
+        is_provisional_excluded = (
+            campaign_name.casefold()
+            == PROVISIONAL_EXCLUDED_CAMPAIGN.casefold()
+        )
+        enabled = (
+            "false"
+            if ads_platform and not campaign_id and not is_provisional_excluded
+            else "true"
+        )
         rows.append(
             _normalize_row(
                 {
@@ -305,6 +341,11 @@ def _rows_from_legacy_dashboard(values: list[list[str]]) -> list[dict]:
                     "action": padded[22],
                     "google_campaign_id": campaign_id if "google" in platform_key else "",
                     "meta_campaign_id": campaign_id if "meta" in platform_key else "",
+                    "microsoft_campaign_id": (
+                        campaign_id
+                        if "microsoft" in platform_key or "bing" in platform_key
+                        else ""
+                    ),
                     "dynamics_campaign_key": "",
                     "enabled": enabled,
                     **sheet_totals,
@@ -329,7 +370,7 @@ def _write_raw_csv(rows: list[dict], output_path: Path = RAW_OUTPUT_PATH) -> Pat
     return output_path
 
 
-def fetch_manual_plan_from_google_sheet() -> list[dict]:
+def fetch_manual_plan_from_google_sheet(report_start: date | None = None) -> list[dict]:
     """Fetch enabled manual plan rows from the configured Google Sheet.
 
     The raw rows are saved to `data/raw/google_sheet_raw.csv`; returned rows are
@@ -343,7 +384,7 @@ def fetch_manual_plan_from_google_sheet() -> list[dict]:
     try:
         client = gspread.service_account(filename=str(service_account_path))
         spreadsheet = client.open_by_key(config["sheet_id"])
-        worksheet = spreadsheet.worksheet(config["worksheet_name"])
+        worksheet = resolve_manual_worksheet(spreadsheet, report_start)
         values = worksheet.get_all_values(
             value_render_option=ValueRenderOption.unformatted
         )
@@ -375,9 +416,9 @@ def fetch_manual_plan_from_google_sheet() -> list[dict]:
     return [row for row in all_rows if _is_enabled(row)]
 
 
-def fetch_manual_inputs() -> list[dict]:
+def fetch_manual_inputs(report_start: date | None = None) -> list[dict]:
     """Backward-compatible alias for the manual plan reader."""
-    return fetch_manual_plan_from_google_sheet()
+    return fetch_manual_plan_from_google_sheet(report_start)
 
 
 def fetch_crm_mapping_from_google_sheet() -> list[dict]:

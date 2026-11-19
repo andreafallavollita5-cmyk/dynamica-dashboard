@@ -17,6 +17,7 @@ REPORT_DAILY_PATH = Path("data/report_daily_metrics.csv")
 REPORT_DAILY_STATUS_PATH = Path("data/report_daily_status.json")
 LAST_UPDATE_PATH = Path("data/last_update.json")
 HISTORY_PATH = Path("data/history")
+PLANS_PATH = Path("data/plans")
 
 DASHBOARD_TABLE_COLUMNS = {
     "funnel": "Funnel",
@@ -126,7 +127,43 @@ def load_last_update(path: Path | None = None) -> dict:
 
 def load_period_catalog() -> dict[str, dict]:
     """Return complete historical months plus the current latest dataset."""
+    def accessible(required: dict[str, Path]) -> bool:
+        try:
+            return all(path.is_file() for path in required.values())
+        except OSError:
+            return False
+
     catalog: dict[str, dict] = {}
+    if PLANS_PATH.exists():
+        for folder in sorted(path for path in PLANS_PATH.iterdir() if path.is_dir()):
+            required = {
+                "report": folder / "report_data.csv",
+                "daily": folder / "report_daily_metrics.csv",
+                "metadata": folder / "last_update.json",
+            }
+            if not accessible(required):
+                continue
+            metadata = load_last_update(required["metadata"])
+            try:
+                start = date.fromisoformat(str(metadata["start_date"]))
+                end = date.fromisoformat(str(metadata["end_date"]))
+            except (KeyError, ValueError, TypeError):
+                continue
+            key = start.strftime("%Y-%m")
+            if (
+                folder.name != key
+                or (start.year, start.month) != (end.year, end.month)
+                or metadata.get("dataset_type") != "future_plan"
+                or metadata.get("actuals_available") is not False
+            ):
+                continue
+            catalog[key] = {
+                **required,
+                "start": start,
+                "end": end,
+                "dataset_type": "future_plan",
+                "actuals_available": False,
+            }
     if HISTORY_PATH.exists():
         for folder in sorted(path for path in HISTORY_PATH.iterdir() if path.is_dir()):
             required = {
@@ -134,7 +171,7 @@ def load_period_catalog() -> dict[str, dict]:
                 "daily": folder / "report_daily_metrics.csv",
                 "metadata": folder / "last_update.json",
             }
-            if not all(path.exists() for path in required.values()):
+            if not accessible(required):
                 continue
             metadata = load_last_update(required["metadata"])
             try:
@@ -145,7 +182,13 @@ def load_period_catalog() -> dict[str, dict]:
             key = start.strftime("%Y-%m")
             if folder.name != key or (start.year, start.month) != (end.year, end.month):
                 continue
-            catalog[key] = {**required, "start": start, "end": end}
+            catalog[key] = {
+                **required,
+                "start": start,
+                "end": end,
+                "dataset_type": "history",
+                "actuals_available": True,
+            }
 
     latest_metadata = load_last_update()
     try:
@@ -165,6 +208,8 @@ def load_period_catalog() -> dict[str, dict]:
             "metadata": LAST_UPDATE_PATH,
             "start": latest_start,
             "end": latest_end,
+            "dataset_type": "latest",
+            "actuals_available": True,
         }
     return catalog
 
@@ -1383,7 +1428,9 @@ def apply_daily_spend_filter(pd, report_df, daily_df, start_date, end_date):
         (daily_df["date"] >= start_date) & (daily_df["date"] <= end_date)
     ].copy()
     ads_daily = filtered_daily[
-        filtered_daily["source"].isin(["google_ads", "meta_ads"])
+        filtered_daily["source"].isin(
+            ["google_ads", "meta_ads", "microsoft_ads"]
+        )
     ].copy()
     totals = ads_daily.groupby(["source", "campaign_id"], dropna=False)["spend"].sum()
     result = report_df.copy()
@@ -1485,6 +1532,11 @@ def apply_daily_spend_filter(pd, report_df, daily_df, start_date, end_date):
             key = ("google_ads", clean_id(row.get("google_campaign_id")))
         elif "meta" in platform:
             key = ("meta_ads", clean_id(row.get("meta_campaign_id")))
+        elif "microsoft" in platform or "bing" in platform:
+            key = (
+                "microsoft_ads",
+                clean_id(row.get("microsoft_campaign_id")),
+            )
         else:
             is_dem = client_subtotal_group(row.to_dict()) == "dem"
             lead_value = pd.to_numeric(
@@ -1750,6 +1802,146 @@ def build_period_report_frame(
     )
 
 
+PLAN_ACTUAL_FIELDS = (
+    "lead_effettive",
+    "delta_lead",
+    "speso_effettivo",
+    "delta_speso",
+    "delta_delivery_pct",
+    "cpl_effettivo",
+    "delta_cpl",
+)
+
+
+def clear_plan_actuals(pd, frame):
+    """Keep future-plan actuals unavailable instead of converting them to zero."""
+    result = frame.copy()
+    for field in PLAN_ACTUAL_FIELDS:
+        if field in result.columns:
+            result[field] = pd.NA
+    return result
+
+
+def build_future_plan_period_frame(
+    pd, report_df, selected_start, selected_end
+):
+    """Recalculate plan-only metrics for a selected range within one month."""
+    from calendar import monthrange
+    from src.build_report_data import _summary_row
+    from src.report_groups import CLIENT_GROUPS, client_subtotal_group
+
+    working_days_inclusive, working_days_in_month = load_working_day_functions()
+    campaigns = report_df[
+        report_df.get("row_type", "campaign").fillna("campaign") == "campaign"
+    ].copy()
+    days_in_month = monthrange(selected_start.year, selected_start.month)[1]
+    selected_days = (selected_end - selected_start).days + 1
+    dem_days_in_month = working_days_in_month(selected_start)
+    dem_selected_days = working_days_inclusive(selected_start, selected_end)
+    dem_mask = campaigns.apply(
+        lambda row: client_subtotal_group(row.to_dict()) == "dem", axis=1
+    )
+    lead_target = pd.to_numeric(campaigns.get("stima_lead"), errors="coerce")
+    investment = pd.to_numeric(
+        campaigns.get("investimento_media"), errors="coerce"
+    )
+    campaigns["stima_lead_giornaliere"] = lead_target / days_in_month
+    campaigns.loc[dem_mask, "stima_lead_giornaliere"] = (
+        lead_target.loc[dem_mask] / dem_days_in_month
+    )
+    campaigns["stima_lead_progressiva"] = (
+        campaigns["stima_lead_giornaliere"] * selected_days
+    )
+    campaigns.loc[dem_mask, "stima_lead_progressiva"] = (
+        campaigns.loc[dem_mask, "stima_lead_giornaliere"] * dem_selected_days
+    )
+    campaigns["stima_spending_giornaliera"] = investment / days_in_month
+    campaigns.loc[dem_mask, "stima_spending_giornaliera"] = (
+        investment.loc[dem_mask] / dem_days_in_month
+    )
+    campaigns["stima_spending_progressiva"] = (
+        campaigns["stima_spending_giornaliera"] * selected_days
+    )
+    campaigns.loc[dem_mask, "stima_spending_progressiva"] = (
+        campaigns.loc[dem_mask, "stima_spending_giornaliera"]
+        * dem_selected_days
+    )
+    campaigns["start_date"] = selected_start.isoformat()
+    campaigns["end_date"] = selected_end.isoformat()
+    campaigns = clear_plan_actuals(pd, campaigns)
+
+    official = report_df[
+        report_df.get("row_type", "").isin(["subtotal", "total"])
+    ].copy()
+    summaries = []
+    for slug, label in CLIENT_GROUPS:
+        group = campaigns[
+            campaigns.apply(
+                lambda row: client_subtotal_group(row.to_dict()) == slug, axis=1
+            )
+        ]
+        if group.empty:
+            continue
+        summary = _summary_row(
+            group.to_dict("records"), f"TOT {label}", "subtotal"
+        )
+        source = official[
+            official["campaign_name"].astype(str) == f"TOT {label}"
+        ]
+        if len(source.index) == 1:
+            source_row = source.iloc[0]
+            for field in (
+                "investimento_media",
+                "stima_pratiche",
+                "stima_lead",
+                "cpp_medio",
+                "cpl_target",
+            ):
+                value = pd.to_numeric(
+                    pd.Series([source_row.get(field)]), errors="coerce"
+                ).iloc[0]
+                if pd.isna(summary.get(field)) and not pd.isna(value):
+                    summary[field] = float(value)
+        if summary.get("stima_lead") is not None:
+            month_days = dem_days_in_month if slug == "dem" else days_in_month
+            elapsed_days = dem_selected_days if slug == "dem" else selected_days
+            summary["stima_lead_giornaliere"] = (
+                summary["stima_lead"] / month_days
+            )
+            summary["stima_lead_progressiva"] = (
+                summary["stima_lead_giornaliere"] * elapsed_days
+            )
+        summary["start_date"] = selected_start.isoformat()
+        summary["end_date"] = selected_end.isoformat()
+        summaries.append(summary)
+
+    total = _summary_row(
+        campaigns.to_dict("records"), "TOTALE GENERALE", "total"
+    )
+    for field in (
+        "stima_pratiche",
+        "stima_lead",
+        "stima_lead_giornaliere",
+        "stima_lead_progressiva",
+    ):
+        values = [summary.get(field) for summary in summaries]
+        total[field] = (
+            sum(float(value) for value in values if value is not None)
+            if any(value is not None for value in values)
+            else None
+        )
+    if total.get("investimento_media") is not None and total.get("stima_lead"):
+        total["cpl_target"] = total["investimento_media"] / total["stima_lead"]
+    total["start_date"] = selected_start.isoformat()
+    total["end_date"] = selected_end.isoformat()
+    result = pd.concat(
+        [campaigns, pd.DataFrame([*summaries, total])],
+        ignore_index=True,
+        sort=False,
+    )
+    return clear_plan_actuals(pd, result)
+
+
 def prepare_excel_export_frame(
     pd, report_df, daily_df, metadata: dict, selected_start, selected_end
 ):
@@ -1762,6 +1954,15 @@ def prepare_excel_export_frame(
         and selected_start == report_start.date()
         and selected_end == report_end.date()
     )
+    if metadata.get("dataset_type") == "future_plan":
+        export_df = build_future_plan_period_frame(
+            pd, report_df, selected_start, selected_end
+        )
+        export_metadata = dict(metadata)
+        export_metadata["start_date"] = selected_start.isoformat()
+        export_metadata["end_date"] = selected_end.isoformat()
+        export_df.attrs["metadata"] = export_metadata
+        return export_df
     if selected_is_report_period and "row_type" in report_df.columns:
         export_df = report_df.copy()
         export_df.attrs["metadata"] = dict(metadata)
@@ -2183,7 +2384,10 @@ def render_local_ads_verification(
         st.caption(
             "Controllo locale in sola lettura. Questa sezione non è attiva nella versione cliente."
         )
-        if st.button("Interroga Google Ads e Meta Ads", key="run_ads_verification"):
+        if st.button(
+            "Interroga Google Ads, Meta Ads e Microsoft Ads",
+            key="run_ads_verification",
+        ):
             with st.spinner("Lettura API in corso…"):
                 st.session_state["ads_verification_rows"] = verify_ads_connections(
                     start_date, end_date
@@ -2254,7 +2458,13 @@ def main() -> None:
         active_dataset = resolve_period_dataset(catalog, default_start, default_end)
 
     metadata = load_last_update(active_dataset["metadata"])
+    plan_only = (
+        metadata.get("dataset_type") == "future_plan"
+        and metadata.get("actuals_available") is False
+    )
     report_df = prepare_data(pd, active_dataset["report"])
+    if plan_only:
+        report_df = clear_plan_actuals(pd, report_df)
     daily_spend = prepare_spend_daily(pd, active_dataset["daily"])
     if "row_type" in report_df.columns:
         official_rows = report_df[report_df["row_type"].isin(["subtotal", "total"])].copy()
@@ -2286,6 +2496,11 @@ def main() -> None:
         st.warning(f"Aggiornamento parziale: {message}")
     elif status in {"error", "missing"}:
         st.error("L'ultimo aggiornamento non è stato completato. Sono mostrati gli ultimi dati disponibili.")
+    elif plan_only:
+        st.info(
+            "Piano mensile disponibile. Speso, lead e indicatori di performance "
+            "saranno mostrati quando arriveranno i primi dati reali."
+        )
 
     top_left, top_right = st.columns([1, 1.08], gap="large")
     all_projects_label = "Tutti i progetti"
@@ -2368,13 +2583,22 @@ def main() -> None:
         and selected_start == pd.to_datetime(metadata["start_date"]).date()
         and selected_end == pd.to_datetime(metadata["end_date"]).date()
     )
-    dynamic_all = apply_daily_spend_filter(
-        pd, campaign_df, daily_spend, selected_start, selected_end
-    )
+    if plan_only:
+        planned_period = build_future_plan_period_frame(
+            pd, df, selected_start, selected_end
+        )
+        dynamic_all = planned_period[
+            planned_period["row_type"] == "campaign"
+        ].copy()
+        period_df = planned_period
+    else:
+        dynamic_all = apply_daily_spend_filter(
+            pd, campaign_df, daily_spend, selected_start, selected_end
+        )
+        period_df = build_period_report_frame(
+            pd, df, daily_spend, selected_start, selected_end
+        )
     dynamic_filtered = dynamic_all.reindex(filtered.index)
-    period_df = build_period_report_frame(
-        pd, df, daily_spend, selected_start, selected_end
-    )
     area_total_selected = selected_project == area_clienti_total_label
     area_total_rows = period_df.iloc[0:0].copy()
     if area_total_selected:
@@ -2391,13 +2615,12 @@ def main() -> None:
         area_total_rows = period_df[area_total_mask].copy()
         export_df = period_df[area_campaign_mask | area_total_mask].copy()
     else:
-        export_df = (
-            period_df
-            if full_scope
-            else build_period_report_frame(
+        if full_scope or plan_only:
+            export_df = period_df
+        else:
+            export_df = build_period_report_frame(
                 pd, filtered, daily_spend, selected_start, selected_end
             )
-        )
     export_metadata = dict(metadata)
     export_metadata["start_date"] = selected_start.isoformat()
     export_metadata["end_date"] = selected_end.isoformat()

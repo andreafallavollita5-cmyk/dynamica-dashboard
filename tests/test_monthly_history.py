@@ -186,6 +186,7 @@ class DashboardPeriodCatalogTests(unittest.TestCase):
                 patch.object(app, "REPORT_DAILY_PATH", latest_daily),
                 patch.object(app, "LAST_UPDATE_PATH", latest_metadata),
                 patch.object(app, "HISTORY_PATH", history),
+                patch.object(app, "PLANS_PATH", root / "data" / "plans"),
             ):
                 catalog = app.load_period_catalog()
                 july = app.resolve_period_dataset(

@@ -276,7 +276,12 @@ def _merge_combined_campaign_metrics(ws, output_rows: dict[int, int]) -> None:
 
 
 def _campaign_id(row: pd.Series) -> str:
-    for field in ("google_campaign_id", "meta_campaign_id", "dynamics_campaign_key"):
+    for field in (
+        "google_campaign_id",
+        "meta_campaign_id",
+        "microsoft_campaign_id",
+        "dynamics_campaign_key",
+    ):
         value = _as_text(row.get(field))
         if value:
             return value
@@ -465,7 +470,12 @@ def _write_data_sheet(
         cell.font = Font(color=WHITE, bold=True)
         cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
 
-    id_columns = {"google_campaign_id", "meta_campaign_id", "dynamics_campaign_key"}
+    id_columns = {
+        "google_campaign_id",
+        "meta_campaign_id",
+        "microsoft_campaign_id",
+        "dynamics_campaign_key",
+    }
     date_columns = {"report_date", "start_date", "end_date"}
     currency_fields = {
         "investimento_media",
@@ -834,6 +844,7 @@ def load_report_dataframe(
         dtype={
             "google_campaign_id": "string",
             "meta_campaign_id": "string",
+            "microsoft_campaign_id": "string",
             "dynamics_campaign_key": "string",
         },
     )

@@ -92,9 +92,19 @@ def build_daily_metric_rows(
     for item in campaign_rows.to_dict("records"):
         excel_row = int(item["excel_row"])
         platform = str(item.get("platform") or "").casefold()
-        source = "google_ads" if "google" in platform else "meta_ads" if "meta" in platform else ""
+        source = (
+            "google_ads"
+            if "google" in platform
+            else "meta_ads"
+            if "meta" in platform
+            else "microsoft_ads"
+            if "microsoft" in platform or "bing" in platform
+            else ""
+        )
         campaign_id = _clean_id(
-            item.get("google_campaign_id") or item.get("meta_campaign_id")
+            item.get("google_campaign_id")
+            or item.get("meta_campaign_id")
+            or item.get("microsoft_campaign_id")
         )
         target_row = excel_row
         is_continuation = (
@@ -206,7 +216,7 @@ def build_daily_metric_rows(
 
     source_order = {
         "planning": 0, "google_ads": 1, "meta_ads": 2,
-        "crm": 3, "crm_area_clienti": 4,
+        "microsoft_ads": 3, "crm": 4, "crm_area_clienti": 5,
     }
     return sorted(
         rows,
@@ -226,7 +236,7 @@ def build_daily_metrics(
     crm_export_path: str | Path | None = None,
     crm_audit_path: str | Path | None = None,
     mapping_fetcher=fetch_crm_mapping_from_google_sheet,
-    manual_fetcher=fetch_manual_inputs,
+    manual_fetcher=None,
 ) -> Path:
     report = pd.read_csv(report_path, dtype=str, keep_default_na=False)
     spend = (
@@ -238,7 +248,11 @@ def build_daily_metrics(
     ends = pd.to_datetime(report["end_date"], errors="raise").dt.date.unique()
     if len(starts) != 1 or len(ends) != 1:
         raise DailyMetricsError("Periodo report non univoco.")
-    manual_rows = manual_fetcher()
+    manual_rows = (
+        manual_fetcher()
+        if manual_fetcher is not None
+        else fetch_manual_inputs(starts[0])
+    )
     crm_available = True
     try:
         if load_settings().dynamics_enabled and crm_export_path is None:

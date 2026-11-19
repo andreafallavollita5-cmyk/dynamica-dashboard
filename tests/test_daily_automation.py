@@ -56,6 +56,16 @@ def write_crm(
 
 
 class DateAutomationTests(unittest.TestCase):
+    def test_outlook_download_runs_before_crm_parser(self):
+        source = Path("run_daily_update.bat").read_text(encoding="utf-8")
+        outlook = source.index("-m src.outlook_crm_client")
+        report = source.index("-m src.build_report_data")
+        self.assertLess(outlook, report)
+
+    def test_windows_task_is_configured_for_1030(self):
+        source = Path("scripts/install_daily_task.ps1").read_text(encoding="utf-8")
+        self.assertIn('New-ScheduledTaskTrigger -Daily -At "03:00"', source)
+
     def test_first_day_closes_previous_month(self):
         self.assertEqual(
             current_month_until_yesterday(date(2026, 8, 1)),
@@ -108,6 +118,106 @@ class CRMSelectionTests(unittest.TestCase):
 
 
 class PartialAdsTests(unittest.TestCase):
+    def test_later_graph_error_does_not_stale_todays_valid_export(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            input_dir = root / "data" / "input"
+            input_dir.mkdir(parents=True)
+            export = input_dir / "crm.xlsx"
+            write_crm(export)
+            output = root / "data" / "report_data.csv"
+            outlook_status = {
+                "status": "error",
+                "error": "Autenticazione Microsoft Graph fallita (invalid_client).",
+                "last_success": {
+                    "message_received_at": "2026-07-21T01:00:00+00:00",
+                    "attachment_name": "crm.xlsx",
+                },
+            }
+            environment = {
+                "OUTLOOK_ENABLED": "true",
+                "CRM_EXPORT_DIR": str(input_dir),
+                "DYNAMICS_ENABLED": "false",
+                "TIMEZONE": "Europe/Rome",
+            }
+
+            with (
+                patch.dict("os.environ", environment, clear=False),
+                patch.object(report_module, "ROOT", root),
+                patch.object(
+                    report_module,
+                    "read_outlook_status",
+                    return_value=outlook_status,
+                ),
+            ):
+                build_report_data(
+                    output_path=output,
+                    today=date(2026, 7, 21),
+                    manual_fetcher=lambda: [manual_row(campaign_name="Campaign")],
+                    mapping_fetcher=lambda: [],
+                    google_fetcher=lambda start, end: [
+                        {"campaign_id": "g-1", "campaign_name": "Campaign", "spend": 10}
+                    ],
+                    meta_fetcher=lambda start, end: [],
+                )
+
+            metadata = json.loads((root / "data" / "last_update.json").read_text())
+            self.assertEqual(metadata["status"], "success")
+            self.assertEqual(metadata["sources"]["outlook"], "ok")
+            self.assertEqual(metadata["sources"]["crm"], "ok")
+            self.assertNotIn("error", metadata)
+
+    def test_stale_outlook_keeps_crm_data_and_marks_report_partial(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            input_dir = root / "data" / "input"
+            input_dir.mkdir(parents=True)
+            export = input_dir / "crm.xlsx"
+            write_crm(export)
+            output = root / "data" / "report_data.csv"
+            outlook_status = {
+                "status": "stale",
+                "last_success": {
+                    "message_received_at": "2026-07-19T08:30:00+00:00",
+                    "attachment_name": "crm.xlsx",
+                },
+            }
+            environment = {
+                "OUTLOOK_ENABLED": "true",
+                "CRM_EXPORT_DIR": str(input_dir),
+                "DYNAMICS_ENABLED": "false",
+            }
+
+            with (
+                patch.dict("os.environ", environment, clear=False),
+                patch.object(report_module, "ROOT", root),
+                patch.object(
+                    report_module,
+                    "read_outlook_status",
+                    return_value=outlook_status,
+                ),
+            ):
+                build_report_data(
+                    output_path=output,
+                    today=date(2026, 7, 21),
+                    manual_fetcher=lambda: [manual_row(campaign_name="Campaign")],
+                    mapping_fetcher=lambda: [],
+                    google_fetcher=lambda start, end: [
+                        {"campaign_id": "g-1", "campaign_name": "Campaign", "spend": 10}
+                    ],
+                    meta_fetcher=lambda start, end: [],
+                )
+
+            metadata = json.loads((root / "data" / "last_update.json").read_text())
+            self.assertEqual(metadata["status"], "partial")
+            self.assertEqual(metadata["sources"]["outlook"], "stale")
+            self.assertEqual(metadata["sources"]["crm"], "stale")
+            self.assertEqual(
+                metadata["crm_email_received_at"],
+                "2026-07-19T08:30:00+00:00",
+            )
+            self.assertIn("Outlook CRM non aggiornato", metadata["error"])
+
     def test_one_failed_api_uses_only_same_month_previous_value(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)

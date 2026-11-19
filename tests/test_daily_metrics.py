@@ -65,6 +65,31 @@ class DailyMetricsTests(unittest.TestCase):
         planning = next(row for row in rows if row["source"] == "planning")
         self.assertEqual(planning["monthly_lead_target"], 467)
 
+    def test_microsoft_daily_spend_is_mapped_to_report_row(self):
+        report = pd.DataFrame(
+            [{
+                "row_type": "campaign", "start_date": "2026-10-01",
+                "end_date": "2026-10-12", "excel_row": 7,
+                "campaign_name": "Bing", "platform": "Microsoft",
+                "google_campaign_id": "", "meta_campaign_id": "",
+                "microsoft_campaign_id": "533498925",
+                "investimento_media": 100,
+            }]
+        )
+        spend = pd.DataFrame(
+            [{
+                "date": "2026-10-02", "source": "microsoft_ads",
+                "campaign_id": "533498925", "campaign_name": "Bing",
+                "spend": 12.5,
+            }]
+        )
+
+        rows = build_daily_metric_rows(report, spend, [])
+
+        self.assertEqual(rows[0]["source"], "microsoft_ads")
+        self.assertEqual(rows[0]["excel_row"], 7)
+        self.assertEqual(rows[0]["spend"], 12.5)
+
 
 if __name__ == "__main__":
     unittest.main()

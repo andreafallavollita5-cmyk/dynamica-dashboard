@@ -1,4 +1,4 @@
-"""Maintain daily Google Ads and Meta Ads spend for dashboard filtering."""
+"""Maintain daily Google, Meta and Microsoft Ads spend for date filtering."""
 
 from __future__ import annotations
 
@@ -13,18 +13,25 @@ from zoneinfo import ZoneInfo
 from src.config import load_settings
 from src.dates import current_month_until_yesterday
 from src.google_ads_client import fetch_google_campaign_daily_spend
+from src.google_sheets_client import fetch_manual_inputs
 from src.meta_ads_client import fetch_meta_campaign_daily_spend
+from src.microsoft_ads_client import fetch_microsoft_campaign_daily_spend
 
 
 ROOT = Path(__file__).resolve().parents[1]
 DAILY_COLUMNS = ["date", "source", "campaign_id", "campaign_name", "spend"]
-SOURCE_NAMES = {"Google Ads": "google_ads", "Meta Ads": "meta_ads"}
+SOURCE_NAMES = {
+    "Google Ads": "google_ads",
+    "Meta Ads": "meta_ads",
+    "Microsoft Ads": "microsoft_ads",
+}
 EXCLUDED_META_CAMPAIGNS = {
     "dyn_veloce leadgen dip - cqd | cbo scaling (f3)",
     "recruitment assicuratori 2026",
 }
 EXCLUDED_META_CAMPAIGN_IDS = {"6936446163375"}
 DailyFetcher = Callable[[str, str], list[dict]]
+ManualFetcher = Callable[[], list[dict]]
 
 
 def validate_date_range(start_date: date, end_date: date) -> None:
@@ -38,15 +45,33 @@ def extract_daily_spend(
     output_path: Path = Path("data/report_daily.csv"),
     google_fetcher: DailyFetcher = fetch_google_campaign_daily_spend,
     meta_fetcher: DailyFetcher = fetch_meta_campaign_daily_spend,
+    microsoft_fetcher: DailyFetcher = fetch_microsoft_campaign_daily_spend,
+    manual_fetcher: ManualFetcher | None = None,
 ) -> tuple[Path, dict]:
-    """Fetch both APIs, merge history and deduplicate the queried interval."""
+    """Fetch Ads APIs, merge history and deduplicate the queried interval."""
     validate_date_range(start_date, end_date)
+    manual_rows = (
+        manual_fetcher()
+        if manual_fetcher is not None
+        else fetch_manual_inputs(start_date)
+    )
     statuses: dict[str, dict[str, str | int | None]] = {}
     fetched_by_source: dict[str, list[dict]] = {}
-    for platform, fetcher in (("Google Ads", google_fetcher), ("Meta Ads", meta_fetcher)):
+    for platform, fetcher in (
+        ("Google Ads", google_fetcher),
+        ("Meta Ads", meta_fetcher),
+        ("Microsoft Ads", microsoft_fetcher),
+    ):
         source = SOURCE_NAMES[platform]
         try:
             platform_rows = fetcher(start_date.isoformat(), end_date.isoformat())
+            microsoft_ids: set[str] | None = None
+            if source == "microsoft_ads":
+                microsoft_ids = {
+                    str(row.get("microsoft_campaign_id") or "").strip()
+                    for row in manual_rows
+                    if str(row.get("microsoft_campaign_id") or "").strip()
+                }
             normalized = []
             for row in platform_rows:
                 campaign_name = str(row.get("campaign_name") or "").strip()
@@ -55,6 +80,8 @@ def extract_daily_spend(
                     campaign_name.casefold() in EXCLUDED_META_CAMPAIGNS
                     or campaign_id in EXCLUDED_META_CAMPAIGN_IDS
                 ):
+                    continue
+                if source == "microsoft_ads" and campaign_id not in microsoft_ids:
                     continue
                 normalized.append(
                     {

@@ -19,7 +19,7 @@ $action = New-ScheduledTaskAction `
     -Execute "$env:SystemRoot\System32\cmd.exe" `
     -Argument "/d /c `"$batchPath`"" `
     -WorkingDirectory $projectRoot
-$trigger = New-ScheduledTaskTrigger -Daily -At "07:00"
+$trigger = New-ScheduledTaskTrigger -Daily -At "03:00"
 $principal = New-ScheduledTaskPrincipal `
     -UserId $credential.UserName `
     -LogonType Password `

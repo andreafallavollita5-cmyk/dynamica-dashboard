@@ -28,9 +28,10 @@ from src.google_sheets_client import (
     MAPPING_WORKSHEET_DEFAULT,
     _load_sheet_config,
     _resolve_service_account_path,
+    resolve_manual_worksheet,
 )
 from src.dates import working_days_inclusive, working_days_in_month
-from src.report_groups import is_dem_campaign
+from src.report_groups import is_dem_campaign, is_excluded_from_kpis
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -241,7 +242,9 @@ def _campaign_target_row(
 ) -> int:
     campaign_ids = [
         _normal_id(report_row.get(column, ""))
-        for column in ("google_campaign_id", "meta_campaign_id")
+        for column in (
+            "google_campaign_id", "meta_campaign_id", "microsoft_campaign_id"
+        )
     ]
     campaign_ids = [campaign_id for campaign_id in campaign_ids if campaign_id]
     name = str(report_row.get("campaign_name", "")).strip()
@@ -257,6 +260,8 @@ def _campaign_target_row(
     if is_dem_campaign(report_row):
         if name not in names:
             raise SheetWritebackError(f"Campagna DEM non trovata: {name}")
+        return names[name]
+    if is_excluded_from_kpis(report_row) and name in names:
         return names[name]
     raise SheetWritebackError(
         f"Campagna senza ID e non DEM nel CSV: {name or '<senza nome>'}"
@@ -396,12 +401,25 @@ def build_update_plan(
         for column, formula in formulas.items():
             updates.append(PlannedUpdate(_cell(row, column), [[formula]], "formula"))
 
+    excluded_lead_rows = {
+        _campaign_target_row(row, ids, names)
+        for _, row in campaigns.iterrows()
+        if is_excluded_from_kpis(row)
+    }
     for label in SUBTOTAL_LABELS:
         row = subtotal_rows[label]
         source = group_ranges[label]
-        for column, formula in _summary_formulas(
+        formulas = _summary_formulas(
             row, *source, period, dem_spending=label == "TOT DEM"
-        ).items():
+        )
+        excluded_in_group = sorted(
+            excluded for excluded in excluded_lead_rows
+            if source[0] <= excluded <= source[1]
+        )
+        if excluded_in_group:
+            subtraction = "-".join(f"N{excluded}" for excluded in excluded_in_group)
+            formulas[14] = f"=SUM(N{source[0]}:N{source[1]})-{subtraction}"
+        for column, formula in formulas.items():
             updates.append(PlannedUpdate(_cell(row, column), [[formula]], label))
 
     area_official = frame.loc[
@@ -461,26 +479,29 @@ def build_update_plan(
     return period, updates, expected
 
 
-def _manual_sheet_metadata(spreadsheet: gspread.Spreadsheet) -> tuple[list[dict], dict]:
+def _manual_sheet_metadata(
+    spreadsheet: gspread.Spreadsheet, worksheet_title: str = TARGET_WORKSHEET
+) -> tuple[list[dict], dict]:
     metadata = spreadsheet.fetch_sheet_metadata()
     for sheet in metadata.get("sheets", []):
-        if sheet.get("properties", {}).get("title") == TARGET_WORKSHEET:
+        if sheet.get("properties", {}).get("title") == worksheet_title:
             return list(sheet.get("merges", [])), sheet.get("properties", {})
-    raise SheetWritebackError(f"Worksheet non trovato: {TARGET_WORKSHEET}")
+    raise SheetWritebackError(f"Worksheet non trovato: {worksheet_title}")
 
 
 def _ensure_initial_backup(
     spreadsheet: gspread.Spreadsheet, worksheet: gspread.Worksheet
 ) -> str:
     metadata = spreadsheet.fetch_sheet_metadata()
+    backup_prefix = f"{worksheet.title}_writeback_backup_"
     existing = [
         sheet["properties"]["title"]
         for sheet in metadata.get("sheets", [])
-        if sheet.get("properties", {}).get("title", "").startswith(BACKUP_PREFIX)
+        if sheet.get("properties", {}).get("title", "").startswith(backup_prefix)
     ]
     if existing:
         return sorted(existing)[0]
-    name = BACKUP_PREFIX + datetime.now().strftime("%Y%m%dT%H%M%S")
+    name = backup_prefix + datetime.now().strftime("%Y%m%dT%H%M%S")
     backup = spreadsheet.duplicate_sheet(worksheet.id, new_sheet_name=name)
     backup.hide()
     return name
@@ -544,16 +565,14 @@ def run_writeback(
     expected_end_date: date | None = None,
     dry_run: bool = False,
 ) -> dict[str, object]:
+    frame = pd.read_csv(report_path, dtype=str, keep_default_na=False)
+    report_period = _report_period(frame, expected_end_date)
     config = _load_sheet_config()
-    if config["worksheet_name"] != TARGET_WORKSHEET:
-        raise SheetWritebackError(
-            f"GOOGLE_SHEET_WORKSHEET_NAME deve essere {TARGET_WORKSHEET}."
-        )
     service_account = _resolve_service_account_path(config["service_account_json_path"])
     try:
         client = gspread.service_account(filename=str(service_account))
         spreadsheet = client.open_by_key(config["sheet_id"])
-        worksheet = spreadsheet.worksheet(TARGET_WORKSHEET)
+        worksheet = resolve_manual_worksheet(spreadsheet, report_period.start_date)
         # Required read-only access: this worksheet must never be a write target.
         mapping_name = os.getenv(
             "GOOGLE_SHEET_MAPPING_WORKSHEET_NAME", MAPPING_WORKSHEET_DEFAULT
@@ -566,18 +585,17 @@ def run_writeback(
         protected_before = worksheet.get(
             "A1:K66", value_render_option=ValueRenderOption.formula
         )
-        merges, properties = _manual_sheet_metadata(spreadsheet)
+        merges, properties = _manual_sheet_metadata(spreadsheet, worksheet.title)
     except (SpreadsheetNotFound, WorksheetNotFound, APIError) as exc:
         raise SheetWritebackError("Impossibile leggere il Google Sheet configurato.") from exc
 
-    frame = pd.read_csv(report_path, dtype=str, keep_default_na=False)
     period, updates, expected = build_update_plan(
         frame, values, merges, expected_end_date=expected_end_date
     )
     expected_merges = merges
     result: dict[str, object] = {
         "status": "dry-run" if dry_run else "updated",
-        "worksheet": TARGET_WORKSHEET,
+        "worksheet": worksheet.title,
         "mapping_mode": "read-only",
         "start_date": period.start_date.isoformat(),
         "end_date": period.end_date.isoformat(),

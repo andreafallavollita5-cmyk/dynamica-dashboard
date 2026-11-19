@@ -19,6 +19,7 @@ from src.dates import current_month_until_yesterday
 from src.google_sheets_client import (
     _load_sheet_config,
     _resolve_service_account_path,
+    resolve_manual_worksheet,
 )
 from src.report_groups import is_dem_campaign
 from src.writeback_google_sheet import (
@@ -155,7 +156,7 @@ def run_update(today: date | None = None) -> dict[str, object]:
             filename=str(_resolve_service_account_path(config["service_account_json_path"]))
         )
         spreadsheet = client.open_by_key(config["sheet_id"])
-        worksheet = spreadsheet.worksheet(TARGET_WORKSHEET)
+        worksheet = resolve_manual_worksheet(spreadsheet, start_date)
         _ensure_initial_backup(spreadsheet, worksheet)
         before = worksheet.get(
             "A1:V66", value_render_option=ValueRenderOption.formula
@@ -183,6 +184,7 @@ def run_update(today: date | None = None) -> dict[str, object]:
                 )
 
     return {
+        "worksheet": worksheet.title,
         "start_date": start_date.isoformat(),
         "end_date": end_date.isoformat(),
         "updates": len(updates),

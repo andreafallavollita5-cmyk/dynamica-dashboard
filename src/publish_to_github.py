@@ -22,6 +22,8 @@ HISTORY_FILES = (
     "report_daily_metrics.csv",
     "last_update.json",
 )
+PLANS_ROOT = Path("data/plans")
+PLAN_FILES = HISTORY_FILES
 
 
 def _git(*args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
@@ -56,6 +58,29 @@ def _accessible_history_files(history_root: Path) -> list[Path]:
     return published
 
 
+def _accessible_plan_files(plans_root: Path) -> list[Path]:
+    """Return only complete YYYY-MM plan snapshots."""
+    try:
+        candidates = list(plans_root.iterdir())
+    except OSError:
+        return []
+    published: list[Path] = []
+    for folder in sorted(candidates, key=lambda path: path.name):
+        try:
+            if not folder.is_dir():
+                continue
+            datetime.strptime(folder.name, "%Y-%m")
+        except (OSError, ValueError):
+            continue
+        files = [folder / name for name in PLAN_FILES]
+        try:
+            if all(path.is_file() for path in files):
+                published.extend(files)
+        except OSError:
+            continue
+    return published
+
+
 def publish_latest_files(commit_message: str | None = None) -> bool:
     """Commit and push latest files plus frozen monthly dashboard history.
 
@@ -74,6 +99,12 @@ def publish_latest_files(commit_message: str | None = None) -> bool:
         published_paths.extend(
             path.relative_to(ROOT).as_posix()
             for path in _accessible_history_files(history_root)
+        )
+    plans_root = ROOT / PLANS_ROOT
+    if plans_root.exists():
+        published_paths.extend(
+            path.relative_to(ROOT).as_posix()
+            for path in _accessible_plan_files(plans_root)
         )
 
     _git("add", "--", *published_paths)
