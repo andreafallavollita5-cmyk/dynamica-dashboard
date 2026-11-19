@@ -1,0 +1,10 @@
+{
+  "client": "Dynamica Retail",
+  "start_date": "2026-11-01",
+  "end_date": "2026-11-30",
+  "updated_at": "2026-11-19T13:10:43.602899+01:00",
+  "status": "planned",
+  "dataset_type": "future_plan",
+  "actuals_available": false,
+  "source_worksheet": "manual_inputs_2026-11"
+}
