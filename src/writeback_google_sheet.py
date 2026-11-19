@@ -530,7 +530,9 @@ def _verify_results(
                     "Verifica fallita: una cella manuale fuori dai controlli "
                     "periodo è cambiata."
                 )
-    merges_after, properties_after = _manual_sheet_metadata(spreadsheet)
+    merges_after, properties_after = _manual_sheet_metadata(
+        spreadsheet, worksheet.title
+    )
     if expected_merges != merges_after:
         raise SheetWritebackError("Verifica fallita: unioni celle inattese.")
     # Creating the required backup can move the tab index; that is not a
